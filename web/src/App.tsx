@@ -3,6 +3,7 @@ import { decryptBundle, rememberPassphrase, savedPassphrase } from "./crypto";
 import type { Bundle } from "./types";
 import { Basketball, type BballTab } from "./components/Basketball";
 import { useRefresh, type RefreshState } from "./refresh";
+import { Sheet } from "./components/ui";
 
 type League = "basketball" | "hockey" | "soccer" | "football";
 const LEAGUES: { id: League; label: string; icon: string }[] = [
@@ -187,28 +188,22 @@ function RefreshButton({ state, onClick }: { state: RefreshState; onClick: () =>
 
 function ConfirmSheet({ hasToken, onCancel, onConfirm }: { hasToken: boolean; onCancel: () => void; onConfirm: () => void }) {
   return (
-    <div className="fixed inset-0 z-30 flex items-end justify-center bg-black/40 backdrop-blur-[2px]" onClick={onCancel}>
-      <div
-        className="w-full max-w-xl rounded-t-3xl bg-surface px-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] pt-3 ring-1 ring-line"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-line" />
-        <h3 className="text-lg font-semibold">Refresh now?</h3>
-        <p className="mt-1.5 text-sm text-muted">
-          {hasToken
-            ? "Pulls the latest rosters, live scores and free agents from Yahoo and reruns the projections. Takes about 3 minutes; the page updates itself when it's done."
-            : "Opens the update job on GitHub, where you can tap “Run workflow”."}
-        </p>
-        <div className="mt-5 grid grid-cols-2 gap-3">
-          <button onClick={onCancel} className="rounded-xl bg-line/70 py-3 font-semibold active:opacity-70">
-            Cancel
-          </button>
-          <button onClick={onConfirm} className="rounded-xl bg-accent py-3 font-semibold text-bg active:opacity-80">
-            Refresh
-          </button>
-        </div>
+    <Sheet onClose={onCancel}>
+      <h3 className="text-lg font-semibold">Refresh now?</h3>
+      <p className="mt-1.5 text-sm text-muted">
+        {hasToken
+          ? "Pulls the latest rosters, live scores and free agents from Yahoo and reruns the projections. Takes about 3 minutes; the page updates itself when it's done."
+          : "Opens the update job on GitHub, where you can tap “Run workflow”."}
+      </p>
+      <div className="mt-5 grid grid-cols-2 gap-3">
+        <button onClick={onCancel} className="rounded-xl bg-line/70 py-3 font-semibold active:opacity-70">
+          Cancel
+        </button>
+        <button onClick={onConfirm} className="rounded-xl bg-accent py-3 font-semibold text-bg active:opacity-80">
+          Refresh
+        </button>
       </div>
-    </div>
+    </Sheet>
   );
 }
 

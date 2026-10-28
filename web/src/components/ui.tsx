@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 export const pct = (p: number, digits = 0) => `${(p * 100).toFixed(digits)}%`;
 
@@ -100,25 +100,85 @@ export function ProbBar({ p, faded = false }: { p: number; faded?: boolean }) {
   );
 }
 
-/** Bottom sheet over a dimmed page. Tap outside or the handle to close. */
+const SHEET_MS = 240;
+
+/** Bottom sheet over a dimmed page. Slides up on open; close by dragging the handle down (or a quick
+ *  flick), tapping the handle, tapping outside, or Escape. */
 export function Sheet({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+  const [shown, setShown] = useState(false);
+  const [dy, setDy] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const drag = useRef<{ y: number; t: number } | null>(null);
+  const closing = useRef(false);
+  const panel = useRef<HTMLDivElement>(null);
+
+  const close = useCallback(() => {
+    if (closing.current) return;
+    closing.current = true;
+    setDragging(false);
+    setShown(false);
+    window.setTimeout(onClose, SHEET_MS);
+  }, [onClose]);
+
   useEffect(() => {
+    const raf = requestAnimationFrame(() => setShown(true));
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && close();
     window.addEventListener("keydown", esc);
     return () => {
+      cancelAnimationFrame(raf);
       document.body.style.overflow = prev;
       window.removeEventListener("keydown", esc);
     };
-  }, [onClose]);
+  }, [close]);
+
+  const onDown = (e: React.PointerEvent) => {
+    drag.current = { y: e.clientY, t: performance.now() };
+    setDragging(true);
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onMove = (e: React.PointerEvent) => {
+    if (drag.current) setDy(Math.max(0, e.clientY - drag.current.y));
+  };
+  const onUp = (e: React.PointerEvent) => {
+    if (!drag.current) return;
+    const d = Math.max(0, e.clientY - drag.current.y);
+    const ms = performance.now() - drag.current.t;
+    drag.current = null;
+    setDragging(false);
+    const h = panel.current?.offsetHeight ?? 400;
+    const tap = d < 4 && ms < 300;
+    const flick = d > 40 && d / Math.max(ms, 1) > 0.6;
+    if (tap || flick || d > Math.min(140, h * 0.3)) close();                      // far enough, or a flick
+    else setDy(0);                                                                 // spring back
+  };
+
+  const h = panel.current?.offsetHeight ?? 600;
+  const ease = dragging ? "none" : `transform ${SHEET_MS}ms cubic-bezier(.2,.8,.2,1), opacity ${SHEET_MS}ms`;
   return (
-    <div className="fixed inset-0 z-30 flex items-end justify-center bg-black/40 backdrop-blur-[2px]" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-30 flex items-end justify-center bg-black/40 backdrop-blur-[2px]"
+      style={{ opacity: shown ? Math.max(0.15, 1 - dy / (h * 1.2)) : 0, transition: dragging ? "none" : `opacity ${SHEET_MS}ms` }}
+      onClick={close}
+    >
       <div
-        className="max-h-[85dvh] w-full max-w-xl overflow-y-auto rounded-t-3xl bg-surface px-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] pt-3 ring-1 ring-line"
+        ref={panel}
+        className="max-h-[85dvh] w-full max-w-xl overflow-y-auto rounded-t-3xl bg-surface px-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] ring-1 ring-line"
+        style={{ transform: shown ? `translateY(${dy}px)` : "translateY(100%)", transition: ease }}
         onClick={(e) => e.stopPropagation()}
       >
-        <button onClick={onClose} aria-label="Close" className="mx-auto mb-4 block h-1 w-10 rounded-full bg-line" />
+        <div
+          role="button"
+          aria-label="Drag down to close"
+          className="-mx-5 cursor-grab touch-none select-none px-5 pb-4 pt-3 active:cursor-grabbing"
+          onPointerDown={onDown}
+          onPointerMove={onMove}
+          onPointerUp={onUp}
+          onPointerCancel={onUp}
+        >
+          <div className="mx-auto h-1.5 w-10 rounded-full bg-line" />
+        </div>
         {children}
       </div>
     </div>
