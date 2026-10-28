@@ -13,38 +13,17 @@ Format (must match web/src/crypto.ts):
 import argparse
 import datetime
 import gzip
-import hashlib
 import json
-import os
-import secrets
 import subprocess
 import sys
 from pathlib import Path
 
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "pipeline"))
+from crypt import encrypt, passphrase
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "web" / "public" / "data" / "desk.fdk"
-MAGIC = b"FDK1"
-ITERATIONS = 310_000
 REPO = "robSanders818/fantasy-desk"
-
-
-def passphrase() -> str:
-    p = os.environ.get("FD_PASSPHRASE")
-    if p:
-        return p
-    r = subprocess.run(["security", "find-generic-password", "-s", "fantasy-desk", "-w"],
-                       capture_output=True, text=True)
-    if r.returncode != 0 or not r.stdout.strip():
-        sys.exit('No passphrase: set $FD_PASSPHRASE or create the Keychain item "fantasy-desk".')
-    return r.stdout.strip()
-
-
-def encrypt(plain: bytes, pw: str) -> bytes:
-    salt, iv = secrets.token_bytes(16), secrets.token_bytes(12)
-    key = hashlib.pbkdf2_hmac("sha256", pw.encode(), salt, ITERATIONS, 32)
-    return MAGIC + salt + iv + AESGCM(key).encrypt(iv, gzip.compress(plain, 9), None)
 
 
 def main() -> None:
@@ -62,7 +41,7 @@ def main() -> None:
     bundle = {"generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="minutes"),
               "leagues": leagues}
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_bytes(encrypt(json.dumps(bundle, separators=(",", ":"), ensure_ascii=False).encode(), pw))
+    OUT.write_bytes(encrypt(gzip.compress(json.dumps(bundle, separators=(",", ":"), ensure_ascii=False).encode(), 9), b"FDK1", pw))
     print(f"encrypted {', '.join(leagues)} -> {OUT.relative_to(ROOT)} ({OUT.stat().st_size / 1024:.0f} KB)")
 
 

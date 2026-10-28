@@ -11,3 +11,7 @@ raw/
 web/sample/
 web/node_modules/
 web/dist/
+
+# Decrypted model inputs and scrape outputs (CI and local runs)
+pipeline/basketball/data/
+pipeline/out/

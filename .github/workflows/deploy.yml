@@ -7,6 +7,7 @@ on:
     branches: [main]
     paths: ["web/**", ".github/workflows/deploy.yml"]
   workflow_dispatch:
+  workflow_call:    # from update.yml after it commits new data
 
 permissions:
   contents: read
@@ -25,6 +26,8 @@ jobs:
         working-directory: web
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main    # include the data commit update.yml just pushed
       - uses: actions/setup-node@v4
         with:
           node-version: 22

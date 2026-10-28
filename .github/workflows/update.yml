@@ -1,0 +1,46 @@
+name: Update
+
+# Refreshes the league data and republishes the page. Runs on a schedule and on demand
+# (the page's Refresh button, the GitHub app's "Run workflow", or `gh workflow run update.yml`).
+on:
+  schedule:
+    - cron: "0 13 * * *"    # ~9:00 am ET (8:00 am after daylight saving ends); GitHub may start it late
+    - cron: "30 21 * * *"   # ~5:30 pm ET, before the 7 pm tip-offs
+  workflow_dispatch:
+
+concurrency:
+  group: update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Basketball (Yahoo scrape + week planner)
+        env:
+          YAHOO_COOKIES: ${{ secrets.YAHOO_COOKIES }}
+          FD_PASSPHRASE: ${{ secrets.FD_PASSPHRASE }}
+        run: uv run pipeline/run_basketball.py
+      - name: Encrypt for the page
+        env:
+          FD_PASSPHRASE: ${{ secrets.FD_PASSPHRASE }}
+        run: uv run scripts/encrypt.py pipeline/out/basketball.json
+      - name: Commit the encrypted data
+        run: |
+          git config user.name "fantasy-desk bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add web/public/data/desk.fdk
+          git commit -m "Update data ($(TZ=America/New_York date '+%a %-m/%-d %-I:%M %p ET'))" || exit 0
+          git push
+
+  deploy:
+    needs: update
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/deploy.yml
