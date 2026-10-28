@@ -6,3 +6,8 @@ raw/
 *.cookies
 *.json.local
 .env
+
+# Unencrypted sample data for local development
+web/sample/
+web/node_modules/
+web/dist/
