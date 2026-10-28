@@ -16,6 +16,7 @@ const TABS: { id: BballTab; label: string; icon: string }[] = [
   { id: "moves", label: "Moves", icon: "M12 5v14M5 12h14" },
   { id: "wire", label: "Free agents", icon: "M4 6h16M4 12h16M4 18h10" },
   { id: "roster", label: "Roster", icon: "M16 11a4 4 0 1 0-8 0M4 21a8 8 0 0 1 16 0" },
+  { id: "league", label: "Rankings", icon: "M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0zM17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3" },
 ];
 
 const DATA_URL = `${import.meta.env.BASE_URL}data/desk.fdk`;
@@ -78,6 +79,7 @@ export default function App() {
 
   const reload = useCallback(() => unlock(savedPassphrase(), false, true), [unlock]);
   const refresh = useRefresh(bundle?.refresh, reload);
+  const [confirming, setConfirming] = useState(false);
 
   if (state === "locked") return <Lock error={error} onUnlock={(p) => unlock(p)} />;
   if (state === "loading") return <Splash text="Unlocking…" />;
@@ -96,7 +98,7 @@ export default function App() {
             <span className={`text-xs ${stale ? "font-semibold text-warn" : "text-muted"}`}>
               {updated.toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" })}
             </span>
-            <RefreshButton state={refresh.state} onClick={refresh.start} />
+            <RefreshButton state={refresh.state} onClick={() => setConfirming(true)} />
           </div>
         </div>
         <RefreshBanner state={refresh.state} />
@@ -131,9 +133,20 @@ export default function App() {
         )}
       </main>
 
+      {confirming && (
+        <ConfirmSheet
+          hasToken={!!bundle.refresh}
+          onCancel={() => setConfirming(false)}
+          onConfirm={() => {
+            setConfirming(false);
+            refresh.start();
+          }}
+        />
+      )}
+
       {league === "basketball" && bb && (
         <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-bg/85 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl">
-          <div className="mx-auto grid max-w-xl grid-cols-4">
+          <div className="mx-auto grid max-w-xl grid-cols-5">
             {TABS.map((t) => (
               <button
                 key={t.id}
@@ -169,6 +182,33 @@ function RefreshButton({ state, onClick }: { state: RefreshState; onClick: () =>
         <path d="M21 12a9 9 0 1 1-2.64-6.36M21 4v5h-5" />
       </svg>
     </button>
+  );
+}
+
+function ConfirmSheet({ hasToken, onCancel, onConfirm }: { hasToken: boolean; onCancel: () => void; onConfirm: () => void }) {
+  return (
+    <div className="fixed inset-0 z-30 flex items-end justify-center bg-black/40 backdrop-blur-[2px]" onClick={onCancel}>
+      <div
+        className="w-full max-w-xl rounded-t-3xl bg-surface px-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] pt-3 ring-1 ring-line"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-line" />
+        <h3 className="text-lg font-semibold">Refresh now?</h3>
+        <p className="mt-1.5 text-sm text-muted">
+          {hasToken
+            ? "Pulls the latest rosters, live scores and free agents from Yahoo and reruns the projections. Takes about 3 minutes; the page updates itself when it's done."
+            : "Opens the update job on GitHub, where you can tap “Run workflow”."}
+        </p>
+        <div className="mt-5 grid grid-cols-2 gap-3">
+          <button onClick={onCancel} className="rounded-xl bg-line/70 py-3 font-semibold active:opacity-70">
+            Cancel
+          </button>
+          <button onClick={onConfirm} className="rounded-xl bg-accent py-3 font-semibold text-bg active:opacity-80">
+            Refresh
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

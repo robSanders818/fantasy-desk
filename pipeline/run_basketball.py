@@ -73,9 +73,10 @@ def main() -> None:
         log(f"rosters: {len(rosters)} players")
         fas = Y.free_agents(y)
         log(f"free agents: {len(fas)}")
-        week_no, opp = Y.opponent(y)
-        bank_me, bank_opp = Y.banked(y, Y.ME, played), Y.banked(y, opp, played)
-        log(f"week {week_no}: banked {len(played)} day(s)")
+        week_no, opp, standings = Y.league_home(y)
+        bank_me, started_me = Y.banked(y, Y.ME, played, today)
+        bank_opp, started_opp = Y.banked(y, opp, played, today)
+        log(f"week {week_no}: banked {len(played)} finished day(s) + today ({len(started_me | started_opp)} players' games already started)")
         adds_used = Y.adds_this_week(y, wk_start, SEASON_YEAR)
     except Y.SessionExpired:
         status["yahoo"] = "expired"
@@ -96,8 +97,11 @@ def main() -> None:
     # Yahoo "O" on a player still in an active/bench slot: out today, back after. IL slot or INJ: out all week.
     mine = [r for r in rosters if r["team_id"] == Y.ME]
     theirs = [r for r in rosters if r["team_id"] == opp]
+    # ...and anyone whose game today has already started is counted in the live totals, not simulated again.
+    started = started_me | started_opp
     out_days = [f"{r['name']}={today.isoformat()}" for r in mine + theirs
-                if r["status"] in SHORT_OUT and r["slot"] not in ("IL", "IL+")]
+                if (r["status"] in SHORT_OUT and r["slot"] not in ("IL", "IL+"))
+                or (r["name"] in started and r["status"] not in LONG_OUT and r["slot"] not in ("IL", "IL+"))]
     adds_left = max(ADDS_PER_WEEK - adds_used, 0)
 
     alerts = []
@@ -109,6 +113,9 @@ def main() -> None:
             alerts.append({"kind": "activate", "text": f"{r['name']} is no longer listed out -- activate him from IL."})
     if adds_left == 0:
         alerts.append({"kind": "info", "text": "No adds left this week -- free-agent values shown for planning only."})
+
+    standings_path = season_dir / "standings.json"
+    standings_path.write_text(json.dumps(standings))
 
     json_path = OUT / "basketball.json"
     cmd = [sys.executable, str(BB / "stream.py"), "--opp", str(opp),
@@ -127,12 +134,24 @@ def main() -> None:
         sys.exit(1)
     log(f"model: {time.time() - t1:.0f}s")
 
+    t2 = time.time()
+    rank_path = OUT / "rankings.json"
+    r = subprocess.run([sys.executable, str(BB / "rankings.py"), str(stats_path), str(standings_path), str(rank_path)],
+                       cwd=BB, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    if r.returncode != 0:
+        log(f"rankings failed: {(r.stderr.strip().splitlines() or ['?'])[-1].split(':')[0]}")
+        status["errors"].append("rankings")
+    else:
+        log(f"rankings: {time.time() - t2:.0f}s")
+
     d = json.loads(json_path.read_text())
+    d["rankings"] = json.loads(rank_path.read_text()) if rank_path.exists() and r.returncode == 0 else []
+    d["my_team_id"] = Y.ME
     d["week"] = {"number": week_no, "start": wk_start.isoformat(), "end": wk_end.isoformat(), "sim_from": today.isoformat()}
     d["adds_used"] = adds_used
     d["alerts"] = alerts
     d["status"] = {**status, "scraped_at": datetime.now(ZoneInfo("America/New_York")).isoformat(timespec="minutes"),
-                   "days_banked": len(played)}
+                   "days_banked": len(played), "live_today": len(started)}
     json_path.write_text(json.dumps(d, ensure_ascii=False))
     log(f"done in {time.time() - t0:.0f}s")
 

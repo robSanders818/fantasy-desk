@@ -4,7 +4,7 @@ Pages (league 13126, my team 9), about 30-45 requests paced 2.5 s apart:
   /{t}?stat1=AS&stat2=AS_2026         10 team rosters with 2026-27 per-game stats, slots, statuses
   /players?status=A&pos=P&...          top 150 free agents, 2026-27 and 2025-26 per-game stats
   /                                    this week's opponent (scoreboard matchup links)
-  /{t}?date=D&stat1=S&stat2=D          each finished day's active-lineup stats -> week-to-date totals
+  /{t}?date=D&stat1=S&stat2=D          each day's active-lineup stats (today's live) -> week-to-date totals
                                        (the matchup page only loads its scores with JavaScript)
   /transactions                        my adds this week
 
@@ -123,27 +123,58 @@ def free_agents(y: Yahoo, n: int = 150) -> list[dict]:
              "cur": cur.get(pid, ""), "ly": ly.get(pid, "")} for pid, m in meta.items()]
 
 
-def opponent(y: Yahoo) -> tuple[int, int]:
-    """(week number, opponent team id) from the league scoreboard's matchup links."""
+def league_home(y: Yahoo) -> tuple[int, int, list[dict]]:
+    """(week number, opponent team id, standings) from the league home page."""
     doc = y.get("/")
+    week = opp = None
     for a in doc.select("a[href]"):
         m = re.search(r"matchup\?week=(\d+)&mid1=(\d+)&mid2=(\d+)", a["href"])
         if m and ME in (int(m.group(2)), int(m.group(3))):
-            w, a_, b_ = map(int, m.groups())
-            return w, b_ if a_ == ME else a_
-    raise RuntimeError("couldn't find this week's matchup on the scoreboard")
+            week, a_, b_ = map(int, m.groups())
+            opp = b_ if a_ == ME else a_
+            break
+    if opp is None:
+        raise RuntimeError("couldn't find this week's matchup on the scoreboard")
+    standings = []
+    for t in doc.select("table"):
+        rows = t.select("tr")
+        hdr = [clean(c.get_text()) for c in rows[0].find_all(["th", "td"])] if rows else []
+        if "W-L-T" not in hdr or "Rank" not in hdr:
+            continue
+        for r in rows[1:]:
+            links = [a for a in r.select("a[href]") if re.search(rf"/nba/{LEAGUE}/\d+$", a["href"])]
+            link = next((a for a in links if clean(a.get_text())), links[0] if links else None)   # skip the logo link
+            if link is None:
+                continue
+            c = dict(zip(hdr, [clean(x.get_text()) for x in r.find_all(["td", "th"])]))
+            standings.append({"team_id": int(re.search(r"(\d+)$", link["href"]).group(1)), "team": clean(link.get_text()),
+                              "rank": int(c["Rank"]) if c.get("Rank", "").isdigit() else None, "record": c.get("W-L-T", "")})
+        break
+    return week, opp, standings
 
 
-def day_totals(y: Yahoo, team: int, day: date) -> list[float]:
-    """Counting stats a team banked on one date: players in active slots only (bench/IL don't count).
-    Returns [FGM, FGA, FTM, FTA, 3PTM, PTS, REB, AST, ST, BLK, TO]."""
+# Game status next to a player on a day's lineup: "W, 130-103 vs SAC" (final), "Q1 2:25, 26-33 @ LAL" (live),
+# "7:00 pm @ CHA" (not started), or nothing (no game).
+STARTED = re.compile(r"(?:^|\s)(?:[WL], \d+-\d+|Q[1-4]\b|OT\b|\dOT\b|Half|End of|Final)")
+
+
+def day_totals(y: Yahoo, team: int, day: date) -> tuple[list[float], set[str]]:
+    """Counting stats a team has banked on one date (live for today): players in active slots only
+    (bench/IL don't count). Returns ([FGM, FGA, FTM, FTA, 3PTM, PTS, REB, AST, ST, BLK, TO], names
+    of the team's players whose game that day has started or finished)."""
     doc = y.get(f"/{team}?date={day.isoformat()}&stat1=S&stat2=D")
     tbl = doc.select_one("#statTable0")
     hdr = [clean(c.get_text()) for c in tbl.select("thead tr")[-1].find_all(["th", "td"])]
     tot = [0.0] * 11
+    started = set()
     for row in tbl.select("tbody tr"):
-        if _player(row) is None:
+        p = _player(row)
+        if p is None:
             continue
+        cell = next((td for td in row.find_all("td") if td.select_one("a[href*='/nba/players/']")), None)
+        game = re.sub(r".*?[A-Z]{2,4} - [A-Z,]+", "", clean(cell.get_text(" "))) if cell else ""
+        if STARTED.search(game):
+            started.add(p[1])
         c = [clean(x.get_text()) for x in row.find_all("td")]
         if c[0] in ("BN", "IL", "IL+"):
             continue
@@ -154,18 +185,22 @@ def day_totals(y: Yahoo, team: int, day: date) -> list[float]:
             continue                               # no game that day
         vals = [*fg.split("/"), *ft.split("/")] + [g(k) for k in ["3PTM", "PTS", "REB", "AST", "ST", "BLK", "TO"]]
         tot = [t + (float(v) if v not in ("-", "") else 0.0) for t, v in zip(tot, vals)]
-    return tot
+    return tot, started
 
 
-def banked(y: Yahoo, team: int, days: list[date]) -> str | None:
-    """Week-to-date totals in stream.py's --banked format, summed over the given (finished) days."""
-    if not days:
-        return None
-    tot = [0.0] * 11
-    for d in days:
-        tot = [a + b for a, b in zip(tot, day_totals(y, team, d))]
+def banked(y: Yahoo, team: int, days: list[date], today: date) -> tuple[str | None, set[str]]:
+    """Week-to-date totals in stream.py's --banked format: finished days plus today's live stats.
+    Also returns the players whose game today has already started (the model skips them today)."""
+    tot, started = [0.0] * 11, set()
+    for d in days + [today]:
+        day_tot, s = day_totals(y, team, d)
+        tot = [a + b for a, b in zip(tot, day_tot)]
+        if d == today:
+            started = s
+    if not any(tot):
+        return None, started
     t = [int(round(v)) for v in tot]
-    return f"{t[0]}/{t[1]},{t[2]}/{t[3]}," + ",".join(str(v) for v in t[4:])
+    return f"{t[0]}/{t[1]},{t[2]}/{t[3]}," + ",".join(str(v) for v in t[4:]), started
 
 
 def adds_this_week(y: Yahoo, week_start: date, season_year: int) -> int:

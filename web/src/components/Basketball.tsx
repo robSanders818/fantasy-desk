@@ -1,16 +1,17 @@
 import { useMemo, useState } from "react";
-import type { CategoryLeague, FreeAgent } from "../types";
+import type { CategoryLeague, FreeAgent, RankRow } from "../types";
 import { Badge, Card, Delta, ProbBar, SectionTitle, StatusBadge, WinRing, pct, shortDay, signed, signedPts } from "./ui";
 
 const fmtCat = (c: string, v: number | undefined) =>
   v == null ? "–" : c.includes("%") ? v.toFixed(3).replace(/^0/, "") : Math.round(v).toString();
 
-export type BballTab = "matchup" | "moves" | "wire" | "roster";
+export type BballTab = "matchup" | "moves" | "wire" | "roster" | "league";
 
 export function Basketball({ d, tab }: { d: CategoryLeague; tab: BballTab }) {
   if (tab === "moves") return <Moves d={d} />;
   if (tab === "wire") return <Wire d={d} />;
   if (tab === "roster") return <Roster d={d} />;
+  if (tab === "league") return <Rankings d={d} />;
   return <Matchup d={d} />;
 }
 
@@ -289,4 +290,73 @@ function Roster({ d }: { d: CategoryLeague }) {
       </Card>
     </>
   );
+}
+
+function Rankings({ d }: { d: CategoryLeague }) {
+  const [open, setOpen] = useState<number | null>(d.my_team_id ?? null);
+  const rows = d.rankings ?? [];
+  if (!rows.length) return <Card className="p-4 text-sm text-muted">Rankings will appear after the next update.</Card>;
+  const me = d.my_team_id;
+  return (
+    <>
+      <div className="px-1 pb-2 pt-1 text-xs text-muted">
+        Projected chance to win a typical week against the rest of the league, from current rosters and injuries.
+      </div>
+      <Card className="divide-y divide-line">
+        {rows.map((r) => (
+          <RankItem key={r.team_id} r={r} d={d} mine={r.team_id === me} open={open === r.team_id}
+            toggle={() => setOpen(open === r.team_id ? null : r.team_id)} />
+        ))}
+      </Card>
+      <p className="px-1 pt-2 text-xs text-muted">Record and standing are from Yahoo. Tap a team for its category strengths.</p>
+    </>
+  );
+}
+
+function RankItem({ r, d, mine, open, toggle }: { r: RankRow; d: CategoryLeague; mine: boolean; open: boolean; toggle: () => void }) {
+  const vsMe = d.my_team_id != null ? r.vs[String(d.my_team_id)] : undefined;
+  return (
+    <div className={mine ? "bg-accent/5" : ""}>
+      <button onClick={toggle} className="flex w-full items-center gap-3 px-4 py-3 text-left active:bg-line/40">
+        <div className={`w-6 text-center text-lg font-bold tabular-nums ${mine ? "text-accent" : "text-muted"}`}>{r.rank}</div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className={`truncate font-semibold ${mine ? "text-accent" : ""}`}>{r.team}</span>
+          </div>
+          <div className="mt-0.5 text-xs text-muted">
+            {r.record}
+            {r.standing ? ` · ${ordinal(r.standing)} in standings` : ""}
+          </div>
+          <div className="mt-1.5">
+            <ProbBar p={r.proj_week} />
+          </div>
+        </div>
+        <div className="w-12 shrink-0 text-right text-lg font-bold tabular-nums">{pct(r.proj_week)}</div>
+      </button>
+      {open && (
+        <div className="px-4 pb-3">
+          <div className="grid grid-cols-3 gap-x-4 gap-y-2 text-xs">
+            {d.cats.map((c) => (
+              <div key={c} className="flex items-center justify-between gap-2">
+                <span className="text-muted">{c}</span>
+                <span className={`font-semibold tabular-nums ${r.p_cat[c] >= 0.6 ? "text-up" : r.p_cat[c] <= 0.4 ? "text-down" : ""}`}>
+                  {pct(r.p_cat[c])}
+                </span>
+              </div>
+            ))}
+          </div>
+          {!mine && vsMe != null && (
+            <div className="mt-2.5 text-xs text-muted">
+              Head to head: they'd beat you <span className="font-semibold text-fg">{pct(vsMe)}</span> of the time.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ordinal(n: number) {
+  const s = ["th", "st", "nd", "rd"], v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }

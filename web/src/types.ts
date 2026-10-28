@@ -44,6 +44,17 @@ export interface RosterPlayer extends Player {
   droppable: boolean;
 }
 
+export interface RankRow {
+  rank: number;
+  team_id: number;
+  team: string;
+  record: string;
+  standing: number | null;
+  proj_week: number;
+  p_cat: CatMap;
+  vs: Record<string, number>; // P(win a week) vs each other team, by team_id
+}
+
 export interface CategoryLeague {
   league: "basketball";
   generated_at: string;
@@ -66,6 +77,8 @@ export interface CategoryLeague {
   plan: PlanStep[];
   free_agents: FreeAgent[];
   roster: RosterPlayer[];
+  rankings?: RankRow[];
+  my_team_id?: number;
 }
 
 export interface Bundle {
