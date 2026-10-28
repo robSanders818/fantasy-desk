@@ -1,0 +1,18 @@
+name: Yahoo session probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Check the Yahoo session from GitHub's servers
+        env:
+          YAHOO_COOKIES: ${{ secrets.YAHOO_COOKIES }}
+        run: uv run probe.py

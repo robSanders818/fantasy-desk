@@ -1,0 +1,13 @@
+[project]
+name = "fantasy-desk"
+version = "0.1.0"
+description = "Daily fantasy recommendations (lineups, adds, win% added), published as an encrypted page"
+requires-python = ">=3.13"
+dependencies = [
+    "requests>=2.32",
+]
+
+[dependency-groups]
+local = [
+    "browser-cookie3>=0.20",
+]
