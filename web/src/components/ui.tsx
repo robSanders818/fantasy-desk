@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 
 export const pct = (p: number, digits = 0) => `${(p * 100).toFixed(digits)}%`;
 
@@ -96,6 +96,31 @@ export function ProbBar({ p, faded = false }: { p: number; faded?: boolean }) {
   return (
     <div className={`h-1.5 w-full overflow-hidden rounded-full bg-line ${faded ? "opacity-40" : ""}`}>
       <div className={`h-full rounded-full ${tone} transition-[width] duration-700`} style={{ width: pct(p) }} />
+    </div>
+  );
+}
+
+/** Bottom sheet over a dimmed page. Tap outside or the handle to close. */
+export function Sheet({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", esc);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", esc);
+    };
+  }, [onClose]);
+  return (
+    <div className="fixed inset-0 z-30 flex items-end justify-center bg-black/40 backdrop-blur-[2px]" onClick={onClose}>
+      <div
+        className="max-h-[85dvh] w-full max-w-xl overflow-y-auto rounded-t-3xl bg-surface px-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] pt-3 ring-1 ring-line"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button onClick={onClose} aria-label="Close" className="mx-auto mb-4 block h-1 w-10 rounded-full bg-line" />
+        {children}
+      </div>
     </div>
   );
 }

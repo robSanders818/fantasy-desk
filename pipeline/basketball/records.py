@@ -49,16 +49,23 @@ def period_totals(days: dict, start: date, end: date, teams: list[int]) -> dict[
     return out
 
 
+def shown(t: list[float]) -> dict:
+    """Category values for display: percentages to 4 places, counts as integers."""
+    return {k: round(v, 4) if "%" in k else int(round(v)) for k, v in cats(t).items()}
+
+
 def this_week(week_tot: dict[int, list[float]], me: int, opp: int, names: dict[int, str]) -> dict:
+    """My week-to-date categories vs every team's: W-L-T and the values behind it."""
     rows, total = [], [0, 0, 0]
     for t in sorted(week_tot):
         if t == me:
             continue
         r = compare(week_tot[me], week_tot[t])
         total = [x + y for x, y in zip(total, r)]
-        rows.append({"team_id": t, "team": names.get(t, str(t)), "record": r, "opponent": t == opp})
+        rows.append({"team_id": t, "team": names.get(t, str(t)), "record": r, "opponent": t == opp,
+                     "cats": shown(week_tot[t])})
     rows.sort(key=lambda x: (-x["opponent"], -(x["record"][0] - x["record"][1])))
-    return {"rows": rows, "total": total}
+    return {"rows": rows, "total": total, "me": shown(week_tot[me])}
 
 
 def season(days: dict, pairs: dict, today: date, names: dict[int, str]) -> dict:

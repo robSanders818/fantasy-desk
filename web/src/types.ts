@@ -79,7 +79,11 @@ export interface CategoryLeague {
   roster: RosterPlayer[];
   rankings?: RankRow[];
   my_team_id?: number;
-  this_week_vs?: { rows: { team_id: number; team: string; record: number[]; opponent: boolean }[]; total: number[] };
+  this_week_vs?: {
+    rows: { team_id: number; team: string; record: number[]; opponent: boolean; cats?: CatMap }[];
+    total: number[];
+    me?: CatMap;
+  };
   season?: {
     weeks: { week: number; start: string; end: string; finished: boolean }[];
     rows: SeasonRow[];

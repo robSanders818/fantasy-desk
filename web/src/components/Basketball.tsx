@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { CategoryLeague, FreeAgent, RankRow, SeasonRow } from "../types";
-import { Badge, Card, Delta, ProbBar, SectionTitle, StatusBadge, WinRing, pct, shortDay, signed, signedPts } from "./ui";
+import { Badge, Card, Delta, ProbBar, SectionTitle, Sheet, StatusBadge, WinRing, pct, shortDay, signed, signedPts } from "./ui";
 
 const fmtCat = (c: string, v: number | undefined) =>
   v == null ? "–" : c.includes("%") ? v.toFixed(3).replace(/^0/, "") : Math.round(v).toString();
@@ -121,23 +121,77 @@ const rec = (r: number[]) => `${r[0]}–${r[1]}${r[2] ? `–${r[2]}` : ""}`;
 
 function VsEveryTeam({ d }: { d: CategoryLeague }) {
   const v = d.this_week_vs;
+  const [open, setOpen] = useState<number | null>(null);
   if (!v?.rows.length) return null;
+  const sel = v.rows.find((r) => r.team_id === open);
   return (
     <>
+      {sel && v.me && sel.cats && (
+        <Sheet onClose={() => setOpen(null)}>
+          <HeadToHead d={d} me={v.me} them={sel.cats} team={sel.team} record={sel.record} opponent={sel.opponent} />
+        </Sheet>
+      )}
       <SectionTitle aside={<span>total <b className="text-fg tabular-nums">{rec(v.total)}</b></span>}>This week vs every team</SectionTitle>
       <Card className="divide-y divide-line">
         {v.rows.map((r) => {
           const tone = r.record[0] > r.record[1] ? "text-up" : r.record[0] < r.record[1] ? "text-down" : "text-warn";
           return (
-            <div key={r.team_id} className="flex items-center gap-3 px-4 py-2.5">
+            <button key={r.team_id} onClick={() => setOpen(r.team_id)}
+              className="flex w-full items-center gap-3 px-4 py-2.5 text-left active:bg-line/40">
               <span className="min-w-0 flex-1 truncate text-sm">{r.team}</span>
               {r.opponent && <Badge tone="accent">opponent</Badge>}
               <span className={`w-14 text-right text-sm font-semibold tabular-nums ${tone}`}>{rec(r.record)}</span>
-            </div>
+              <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 text-muted" fill="none" stroke="currentColor" strokeWidth={2}>
+                <path d="m9 6 6 6-6 6" />
+              </svg>
+            </button>
           );
         })}
       </Card>
-      <p className="px-1 pt-2 text-xs text-muted">Your categories so far this week (live) against each team's, as if you'd played everyone.</p>
+      <p className="px-1 pt-2 text-xs text-muted">
+        Your categories so far this week (live) against each team's, as if you'd played everyone. Tap a team to compare.
+      </p>
+    </>
+  );
+}
+
+function HeadToHead({ d, me, them, team, record, opponent }: {
+  d: CategoryLeague; me: Record<string, number>; them: Record<string, number>; team: string; record: number[]; opponent: boolean;
+}) {
+  const tone = record[0] > record[1] ? "text-up" : record[0] < record[1] ? "text-down" : "text-warn";
+  return (
+    <>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-xs text-muted">This week so far (live){opponent ? " · your opponent" : ""}</div>
+          <h3 className="mt-0.5 truncate text-lg font-semibold">You vs {team}</h3>
+        </div>
+        <div className={`shrink-0 text-2xl font-bold tabular-nums ${tone}`}>{rec(record)}</div>
+      </div>
+      <div className="mt-4 grid grid-cols-[1fr_auto_1fr] gap-x-3 px-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">
+        <div className="text-right">You</div>
+        <div className="w-12 text-center">Cat</div>
+        <div>{team.split(" ")[0]}</div>
+      </div>
+      <div className="divide-y divide-line rounded-xl ring-1 ring-line">
+        {d.cats.map((c) => {
+          const low = d.lower_is_better.includes(c);
+          const a = me[c], b = them[c];
+          const win = Math.abs(a - b) < 1e-9 ? 0 : (low ? a < b : a > b) ? 1 : -1;
+          const punt = d.punt.includes(c);
+          return (
+            <div key={c} className={`grid grid-cols-[1fr_auto_1fr] items-center gap-x-3 px-3 py-2.5 tabular-nums ${punt ? "opacity-55" : ""}`}>
+              <div className={`text-right text-[15px] ${win === 1 ? "font-bold text-up" : "text-fg"}`}>{fmtCat(c, a)}</div>
+              <div className="w-12 text-center text-xs font-semibold text-muted">
+                {c}
+                {punt && <div className="text-[9px] font-normal uppercase">punt</div>}
+              </div>
+              <div className={`text-[15px] ${win === -1 ? "font-bold text-down" : "text-fg"}`}>{fmtCat(c, b)}</div>
+            </div>
+          );
+        })}
+      </div>
+      <p className="mt-3 text-xs text-muted">Active-lineup stats only, Mon through today. Ties shown in neither color.</p>
     </>
   );
 }
