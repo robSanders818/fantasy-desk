@@ -14,6 +14,7 @@ import argparse
 import datetime
 import gzip
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -40,6 +41,9 @@ def main() -> None:
     leagues = {Path(f).stem: json.loads(Path(f).read_text()) for f in a.files}
     bundle = {"generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="minutes"),
               "leagues": leagues}
+    token = os.environ.get("FD_REFRESH_TOKEN")
+    if token:   # lets the page's Refresh button start update.yml (only after the passphrase unlocks it)
+        bundle["refresh"] = {"repo": REPO, "workflow": "update.yml", "token": token}
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_bytes(encrypt(gzip.compress(json.dumps(bundle, separators=(",", ":"), ensure_ascii=False).encode(), 9), b"FDK1", pw))
     print(f"encrypted {', '.join(leagues)} -> {OUT.relative_to(ROOT)} ({OUT.stat().st_size / 1024:.0f} KB)")

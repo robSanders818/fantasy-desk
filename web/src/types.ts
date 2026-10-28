@@ -49,7 +49,10 @@ export interface CategoryLeague {
   generated_at: string;
   team: string;
   opponent: string;
-  week: { start: string; end: string };
+  week: { number?: number; start: string; end: string; sim_from?: string };
+  adds_used?: number;
+  alerts?: { kind: "il" | "activate" | "info"; text: string }[];
+  status?: { yahoo: string; scraped_at: string; days_banked: number };
   cats: string[];
   punt: string[];
   lower_is_better: string[];
@@ -68,4 +71,6 @@ export interface CategoryLeague {
 export interface Bundle {
   generated_at: string;
   leagues: { basketball?: CategoryLeague };
+  /** Fine-grained GitHub token (Actions read/write on the repo only), so the page can start an update. */
+  refresh?: { repo: string; workflow: string; token: string };
 }

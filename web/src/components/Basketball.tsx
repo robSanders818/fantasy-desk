@@ -14,6 +14,20 @@ export function Basketball({ d, tab }: { d: CategoryLeague; tab: BballTab }) {
   return <Matchup d={d} />;
 }
 
+function Alerts({ d }: { d: CategoryLeague }) {
+  if (!d.alerts?.length) return null;
+  return (
+    <div className="mb-3 space-y-2">
+      {d.alerts.map((a, i) => (
+        <div key={i} className={`rounded-xl px-3.5 py-2.5 text-sm ring-1 ${a.kind === "info" ? "bg-surface ring-line text-muted" : "bg-warn/10 ring-warn/30"}`}>
+          <span className="mr-1.5">{a.kind === "il" ? "🩹" : a.kind === "activate" ? "✅" : "ℹ️"}</span>
+          {a.text}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function Matchup({ d }: { d: CategoryLeague }) {
   const lead = d.banked.me
     ? d.cats.reduce(
@@ -30,9 +44,11 @@ function Matchup({ d }: { d: CategoryLeague }) {
     : null;
   return (
     <>
+      <Alerts d={d} />
       <Card className="p-4">
         <div className="text-xs text-muted">
-          Week ending {shortDay(d.week.end)}
+          {d.week.number ? `Week ${d.week.number} · ` : ""}
+          {shortDay(d.week.start)} – {shortDay(d.week.end)}
         </div>
         <div className="mt-0.5 text-lg font-semibold leading-tight">vs {d.opponent}</div>
         <div className="mt-4 flex items-center gap-5">
@@ -53,7 +69,10 @@ function Matchup({ d }: { d: CategoryLeague }) {
               <span className="font-semibold tabular-nums text-up">{pct(d.with_plan.p_win)}</span>
             </Row>
             <Row k="Adds left">
-              <span className="font-semibold tabular-nums">{d.adds_left}</span>
+              <span className="font-semibold tabular-nums">
+                {d.adds_left}
+                {d.adds_used != null && <span className="font-normal text-muted"> of {d.adds_left + d.adds_used}</span>}
+              </span>
             </Row>
           </div>
         </div>
@@ -102,6 +121,7 @@ function Row({ k, children }: { k: string; children: React.ReactNode }) {
 function Moves({ d }: { d: CategoryLeague }) {
   return (
     <>
+      <Alerts d={d} />
       <Card className="p-4">
         <div className="flex items-end justify-between">
           <div>

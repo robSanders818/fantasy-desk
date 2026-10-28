@@ -28,6 +28,7 @@ jobs:
       - name: Encrypt for the page
         env:
           FD_PASSPHRASE: ${{ secrets.FD_PASSPHRASE }}
+          FD_REFRESH_TOKEN: ${{ secrets.FD_REFRESH_TOKEN }}
         run: uv run scripts/encrypt.py pipeline/out/basketball.json
       - name: Commit the encrypted data
         run: |

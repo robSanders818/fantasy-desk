@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { decryptBundle, rememberPassphrase, savedPassphrase } from "./crypto";
 import type { Bundle } from "./types";
 import { Basketball, type BballTab } from "./components/Basketball";
+import { useRefresh, type RefreshState } from "./refresh";
 
 type League = "basketball" | "hockey" | "soccer" | "football";
 const LEAGUES: { id: League; label: string; icon: string }[] = [
@@ -56,8 +57,8 @@ export default function App() {
   const [league, setLeague] = useLocal<League>("fd:league", "basketball");
   const [tab, setTab] = useLocal<BballTab>("fd:tab", "matchup");
 
-  const unlock = useCallback(async (p: string | null, remember = true) => {
-    setState("loading");
+  const unlock = useCallback(async (p: string | null, remember = true, silent = false) => {
+    if (!silent) setState("loading");
     try {
       const b = await loadBundle(p);
       if (p && remember) rememberPassphrase(p);
@@ -75,22 +76,30 @@ export default function App() {
     unlock(savedPassphrase());
   }, [unlock]);
 
+  const reload = useCallback(() => unlock(savedPassphrase(), false, true), [unlock]);
+  const refresh = useRefresh(bundle?.refresh, reload);
+
   if (state === "locked") return <Lock error={error} onUnlock={(p) => unlock(p)} />;
   if (state === "loading") return <Splash text="Unlocking…" />;
   if (state === "error" || !bundle) return <Splash text={error || "Something went wrong"} />;
 
   const bb = bundle.leagues.basketball;
   const updated = new Date(bundle.generated_at);
+  const stale = Date.now() - updated.getTime() > 14 * 3600_000;
 
   return (
     <div className="mx-auto min-h-dvh max-w-xl pb-[calc(env(safe-area-inset-bottom)+5.5rem)]">
       <header className="sticky top-0 z-10 border-b border-line bg-bg/85 px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.75rem)] backdrop-blur-xl">
-        <div className="flex items-baseline justify-between">
+        <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold tracking-tight">Fantasy Desk</h1>
-          <span className="text-xs text-muted">
-            Updated {updated.toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" })}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className={`text-xs ${stale ? "font-semibold text-warn" : "text-muted"}`}>
+              {updated.toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" })}
+            </span>
+            <RefreshButton state={refresh.state} onClick={refresh.start} />
+          </div>
         </div>
+        <RefreshBanner state={refresh.state} />
         <nav className="no-scrollbar -mx-4 mt-3 flex gap-2 overflow-x-auto px-4">
           {LEAGUES.map((l) => {
             const live = !!bundle.leagues[l.id as "basketball"];
@@ -143,6 +152,62 @@ export default function App() {
           </div>
         </nav>
       )}
+    </div>
+  );
+}
+
+function RefreshButton({ state, onClick }: { state: RefreshState; onClick: () => void }) {
+  const busy = state.phase === "starting" || state.phase === "running" || state.phase === "publishing";
+  return (
+    <button
+      onClick={onClick}
+      disabled={busy}
+      aria-label="Refresh now"
+      className="grid h-9 w-9 place-items-center rounded-full bg-surface ring-1 ring-line active:opacity-70 disabled:opacity-60"
+    >
+      <svg viewBox="0 0 24 24" className={`h-[18px] w-[18px] ${busy ? "animate-spin" : ""}`} fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M21 12a9 9 0 1 1-2.64-6.36M21 4v5h-5" />
+      </svg>
+    </button>
+  );
+}
+
+function RefreshBanner({ state }: { state: RefreshState }) {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (state.phase !== "running") return;
+    const id = window.setInterval(() => tick((x) => x + 1), 1000);
+    return () => window.clearInterval(id);
+  }, [state.phase]);
+  if (state.phase === "idle") return null;
+  let text = "";
+  let tone = "text-muted";
+  if (state.phase === "starting") text = "Starting the update…";
+  if (state.phase === "running") {
+    const s = Math.floor((Date.now() - state.since) / 1000);
+    text = `Updating from Yahoo… ${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")} · usually about 3 min`;
+  }
+  if (state.phase === "publishing") text = "Publishing the new numbers…";
+  if (state.phase === "failed") {
+    text = state.message;
+    tone = "text-down";
+  }
+  const busy = state.phase !== "failed";
+  return (
+    <div className="mt-2">
+      {busy && (
+        <div className="h-0.5 overflow-hidden rounded-full bg-line">
+          <div className="h-full w-1/3 animate-[slide_1.4s_ease-in-out_infinite] rounded-full bg-accent" />
+        </div>
+      )}
+      <div className={`mt-1.5 text-xs ${tone}`}>
+        {text}
+        {state.phase === "failed" && state.url && (
+          <a href={state.url} target="_blank" rel="noreferrer" className="ml-1 underline">
+            Details
+          </a>
+        )}
+      </div>
     </div>
   );
 }
