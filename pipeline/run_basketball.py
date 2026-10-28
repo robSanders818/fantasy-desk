@@ -20,6 +20,9 @@ ROOT = Path(__file__).resolve().parent
 BB = ROOT / "basketball"
 OUT = ROOT / "out"
 sys.path.insert(0, str(BB))
+sys.path.insert(0, str(ROOT))
+import cache as C  # noqa: E402
+import records as R  # noqa: E402
 import yahoo as Y  # noqa: E402
 
 SEASON_YEAR = 2026
@@ -50,6 +53,8 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--local", action="store_true", help="use Yahoo cookies from Brave instead of $YAHOO_COOKIES")
     ap.add_argument("--today", help="override today's date (YYYY-MM-DD, Eastern)")
+    ap.add_argument("--backfill", type=int, default=3,
+                    help="max missing past days to fetch this run (10 requests each); use a big number locally")
     a = ap.parse_args()
     t0 = time.time()
     OUT.mkdir(exist_ok=True)
@@ -73,10 +78,37 @@ def main() -> None:
         log(f"rosters: {len(rosters)} players")
         fas = Y.free_agents(y)
         log(f"free agents: {len(fas)}")
-        week_no, opp, standings = Y.league_home(y)
-        bank_me, started_me = Y.banked(y, Y.ME, played, today)
-        bank_opp, started_opp = Y.banked(y, opp, played, today)
-        log(f"week {week_no}: banked {len(played)} finished day(s) + today ({len(started_me | started_opp)} players' games already started)")
+        week_no, opp, standings, pairs_now = Y.league_home(y)
+        teams = list(range(1, Y.N_TEAMS + 1))
+
+        # Daily active-lineup totals for every team: cached finished days, refetching yesterday
+        # (stat corrections) and filling gaps a few days per run; today is always live.
+        store = C.load("basketball")
+        need, d = [], R.SEASON_START
+        while d < today:
+            have = store["days"].get(d.isoformat(), {})
+            if len(have) < len(teams) or d == today - timedelta(days=1):
+                need.append(d)
+            d += timedelta(days=1)
+        yesterday_only = [x for x in need if x == today - timedelta(days=1)]
+        gaps = [x for x in need if x not in yesterday_only][-a.backfill:] if a.backfill else []
+        for d in sorted(set(gaps + yesterday_only)):
+            store["days"][d.isoformat()] = {str(t): Y.day_totals(y, t, d)[0] for t in teams}
+        today_tot, started_by = {}, {}
+        for t in teams:
+            today_tot[t], started_by[t] = Y.day_totals(y, t, today)
+        store["pairs"][str(week_no)] = pairs_now
+        for w in range(1, week_no):
+            if str(w) not in store["pairs"]:
+                store["pairs"][str(w)] = Y.matchup_pairs(y, w)
+        missing = sum(1 for x in need if x not in gaps + yesterday_only)
+        log(f"day totals: fetched {len(set(gaps + yesterday_only))} past day(s) + today; {missing} day(s) still missing")
+
+        week_tot = R.period_totals(store["days"], wk_start, today - timedelta(days=1), teams)
+        week_tot = {t: R.add(week_tot[t], today_tot[t]) for t in teams}
+        bank_me, bank_opp = Y.fmt_banked(week_tot[Y.ME]), Y.fmt_banked(week_tot[opp])
+        started_me, started_opp = started_by[Y.ME], started_by[opp]
+        log(f"week {week_no}: {len(played)} finished day(s) + today ({len(started_me | started_opp)} players' games already started)")
         adds_used = Y.adds_this_week(y, wk_start, SEASON_YEAR)
     except Y.SessionExpired:
         status["yahoo"] = "expired"
@@ -144,7 +176,14 @@ def main() -> None:
     else:
         log(f"rankings: {time.time() - t2:.0f}s")
 
+    # Category records: this week vs every team (live), and the season so far.
+    names = {r["team_id"]: r["team"] for r in standings} or {t: str(t) for t in teams}
+    live_days = {**store["days"], today.isoformat(): {str(t): v for t, v in today_tot.items()}}
+    C.save("basketball", store)
+
     d = json.loads(json_path.read_text())
+    d["this_week_vs"] = R.this_week(week_tot, Y.ME, opp, names)
+    d["season"] = R.season(live_days, store["pairs"], today, names)
     d["rankings"] = json.loads(rank_path.read_text()) if rank_path.exists() and r.returncode == 0 else []
     d["my_team_id"] = Y.ME
     d["week"] = {"number": week_no, "start": wk_start.isoformat(), "end": wk_end.isoformat(), "sim_from": today.isoformat()}

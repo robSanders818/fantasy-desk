@@ -123,18 +123,31 @@ def free_agents(y: Yahoo, n: int = 150) -> list[dict]:
              "cur": cur.get(pid, ""), "ly": ly.get(pid, "")} for pid, m in meta.items()]
 
 
-def league_home(y: Yahoo) -> tuple[int, int, list[dict]]:
-    """(week number, opponent team id, standings) from the league home page."""
-    doc = y.get("/")
-    week = opp = None
+def _pairs(doc) -> tuple[int | None, list[list[int]]]:
+    week, pairs = None, []
     for a in doc.select("a[href]"):
         m = re.search(r"matchup\?week=(\d+)&mid1=(\d+)&mid2=(\d+)", a["href"])
-        if m and ME in (int(m.group(2)), int(m.group(3))):
-            week, a_, b_ = map(int, m.groups())
-            opp = b_ if a_ == ME else a_
-            break
-    if opp is None:
+        if m:
+            week = int(m.group(1))
+            p = sorted([int(m.group(2)), int(m.group(3))])
+            if p not in pairs:
+                pairs.append(p)
+    return week, pairs
+
+
+def matchup_pairs(y: Yahoo, week: int) -> list[list[int]]:
+    """Every [team_a, team_b] matchup in a given week (from that week's scoreboard)."""
+    return _pairs(y.get(f"/?matchup_week={week}"))[1]
+
+
+def league_home(y: Yahoo) -> tuple[int, int, list[dict], list[list[int]]]:
+    """(week number, opponent team id, standings, this week's matchup pairs) from the league home page."""
+    doc = y.get("/")
+    week, pairs = _pairs(doc)
+    mine = next((p for p in pairs if ME in p), None)
+    if mine is None:
         raise RuntimeError("couldn't find this week's matchup on the scoreboard")
+    opp = mine[0] if mine[1] == ME else mine[1]
     standings = []
     for t in doc.select("table"):
         rows = t.select("tr")
@@ -150,7 +163,7 @@ def league_home(y: Yahoo) -> tuple[int, int, list[dict]]:
             standings.append({"team_id": int(re.search(r"(\d+)$", link["href"]).group(1)), "team": clean(link.get_text()),
                               "rank": int(c["Rank"]) if c.get("Rank", "").isdigit() else None, "record": c.get("W-L-T", "")})
         break
-    return week, opp, standings
+    return week, opp, standings, pairs
 
 
 # Game status next to a player on a day's lineup: "W, 130-103 vs SAC" (final), "Q1 2:25, 26-33 @ LAL" (live),
@@ -186,6 +199,14 @@ def day_totals(y: Yahoo, team: int, day: date) -> tuple[list[float], set[str]]:
         vals = [*fg.split("/"), *ft.split("/")] + [g(k) for k in ["3PTM", "PTS", "REB", "AST", "ST", "BLK", "TO"]]
         tot = [t + (float(v) if v not in ("-", "") else 0.0) for t, v in zip(tot, vals)]
     return tot, started
+
+
+def fmt_banked(t: list[float]) -> str | None:
+    """[FGM, FGA, FTM, FTA, ...] -> stream.py's --banked string (None if nothing banked yet)."""
+    if not any(t):
+        return None
+    t = [int(round(v)) for v in t]
+    return f"{t[0]}/{t[1]},{t[2]}/{t[3]}," + ",".join(str(v) for v in t[4:])
 
 
 def banked(y: Yahoo, team: int, days: list[date], today: date) -> tuple[str | None, set[str]]:

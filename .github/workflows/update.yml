@@ -34,7 +34,7 @@ jobs:
         run: |
           git config user.name "fantasy-desk bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add web/public/data/desk.fdk
+          git add web/public/data/desk.fdk pipeline/cache/
           git commit -m "Update data ($(TZ=America/New_York date '+%a %-m/%-d %-I:%M %p ET'))" || exit 0
           git push
 

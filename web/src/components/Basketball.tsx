@@ -1,15 +1,21 @@
 import { useMemo, useState } from "react";
-import type { CategoryLeague, FreeAgent, RankRow } from "../types";
+import type { CategoryLeague, FreeAgent, RankRow, SeasonRow } from "../types";
 import { Badge, Card, Delta, ProbBar, SectionTitle, StatusBadge, WinRing, pct, shortDay, signed, signedPts } from "./ui";
 
 const fmtCat = (c: string, v: number | undefined) =>
   v == null ? "–" : c.includes("%") ? v.toFixed(3).replace(/^0/, "") : Math.round(v).toString();
 
-export type BballTab = "matchup" | "moves" | "wire" | "roster" | "league";
+export type BballTab = "matchup" | "moves" | "roster" | "league";
 
 export function Basketball({ d, tab }: { d: CategoryLeague; tab: BballTab }) {
-  if (tab === "moves") return <Moves d={d} />;
-  if (tab === "wire") return <Wire d={d} />;
+  if (tab === "moves")
+    return (
+      <>
+        <Moves d={d} />
+        <SectionTitle>All free agents</SectionTitle>
+        <Wire d={d} />
+      </>
+    );
   if (tab === "roster") return <Roster d={d} />;
   if (tab === "league") return <Rankings d={d} />;
   return <Matchup d={d} />;
@@ -106,6 +112,32 @@ function Matchup({ d }: { d: CategoryLeague }) {
       <p className="px-1 pt-2 text-xs text-muted">
         Projected = week-to-date stats plus a simulation of the remaining days with daily lineups.
       </p>
+      <VsEveryTeam d={d} />
+    </>
+  );
+}
+
+const rec = (r: number[]) => `${r[0]}–${r[1]}${r[2] ? `–${r[2]}` : ""}`;
+
+function VsEveryTeam({ d }: { d: CategoryLeague }) {
+  const v = d.this_week_vs;
+  if (!v?.rows.length) return null;
+  return (
+    <>
+      <SectionTitle aside={<span>total <b className="text-fg tabular-nums">{rec(v.total)}</b></span>}>This week vs every team</SectionTitle>
+      <Card className="divide-y divide-line">
+        {v.rows.map((r) => {
+          const tone = r.record[0] > r.record[1] ? "text-up" : r.record[0] < r.record[1] ? "text-down" : "text-warn";
+          return (
+            <div key={r.team_id} className="flex items-center gap-3 px-4 py-2.5">
+              <span className="min-w-0 flex-1 truncate text-sm">{r.team}</span>
+              {r.opponent && <Badge tone="accent">opponent</Badge>}
+              <span className={`w-14 text-right text-sm font-semibold tabular-nums ${tone}`}>{rec(r.record)}</span>
+            </div>
+          );
+        })}
+      </Card>
+      <p className="px-1 pt-2 text-xs text-muted">Your categories so far this week (live) against each team's, as if you'd played everyone.</p>
     </>
   );
 }
@@ -187,8 +219,8 @@ function Wire({ d }: { d: CategoryLeague }) {
   const rows = useMemo(() => [...d.free_agents].sort((a, b) => b[sort] - a[sort]), [d.free_agents, sort]);
   return (
     <>
-      <div className="flex items-center justify-between px-1 pb-2 pt-1">
-        <div className="text-xs text-muted">Best single move for each free agent</div>
+      <div className="flex items-center justify-between px-1 pb-2">
+        <div className="text-xs text-muted">Best single move for each</div>
         <div className="flex rounded-lg bg-line/60 p-0.5 text-xs font-medium">
           {(
             [
@@ -293,6 +325,28 @@ function Roster({ d }: { d: CategoryLeague }) {
 }
 
 function Rankings({ d }: { d: CategoryLeague }) {
+  const [view, setView] = useState<"power" | "season">("power");
+  return (
+    <>
+      <div className="mb-2 flex rounded-lg bg-line/60 p-0.5 text-sm font-medium">
+        {(
+          [
+            ["power", "Power rankings"],
+            ["season", "Season so far"],
+          ] as const
+        ).map(([k, label]) => (
+          <button key={k} onClick={() => setView(k)}
+            className={`flex-1 rounded-md py-1.5 ${view === k ? "bg-surface text-fg shadow-sm" : "text-muted"}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {view === "power" ? <Power d={d} /> : <Season d={d} />}
+    </>
+  );
+}
+
+function Power({ d }: { d: CategoryLeague }) {
   const [open, setOpen] = useState<number | null>(d.my_team_id ?? null);
   const rows = d.rankings ?? [];
   if (!rows.length) return <Card className="p-4 text-sm text-muted">Rankings will appear after the next update.</Card>;
@@ -359,4 +413,71 @@ function RankItem({ r, d, mine, open, toggle }: { r: RankRow; d: CategoryLeague;
 function ordinal(n: number) {
   const s = ["th", "st", "nd", "rd"], v = n % 100;
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+type SeasonSort = "allplay" | "cat" | string;
+
+function Season({ d }: { d: CategoryLeague }) {
+  const [sort, setSort] = useState<SeasonSort>("allplay");
+  const se = d.season;
+  if (!se?.rows.length) return <Card className="p-4 text-sm text-muted">Season records will appear after the next update.</Card>;
+  const me = d.my_team_id;
+  const frac = (r: number[]) => (r[0] + r[2] / 2) / Math.max(r[0] + r[1] + r[2], 1);
+  const val = (r: SeasonRow) =>
+    sort === "allplay" ? frac(r.allplay) : sort === "cat" ? frac(r.cat_record) : d.lower_is_better.includes(sort) ? -r.totals[sort] : r.totals[sort];
+  const rows = [...se.rows].sort((a, b) => val(b) - val(a));
+  const weeks = se.weeks.length;
+  const head = (k: SeasonSort, label: string, cls = "") => (
+    <th onClick={() => setSort(k)} className={`cursor-pointer whitespace-nowrap px-2 py-2 text-right font-semibold ${sort === k ? "text-accent" : "text-muted"} ${cls}`}>
+      {label}
+    </th>
+  );
+  return (
+    <>
+      <div className="px-1 pb-2 pt-1 text-xs text-muted">
+        {weeks} week{weeks === 1 ? "" : "s"}, live through today. Tap a column to sort.
+      </div>
+      <Card className="overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs tabular-nums">
+            <thead className="border-b border-line">
+              <tr>
+                <th className="sticky left-0 z-[1] bg-surface px-3 py-2 text-left font-semibold text-muted">Team</th>
+                {head("allplay", "All-play")}
+                {head("cat", "Cat rec")}
+                {d.cats.map((c) => head(c, c))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {rows.map((r) => {
+                const mine = r.team_id === me;
+                return (
+                  <tr key={r.team_id} className={mine ? "bg-accent/5" : ""}>
+                    <td className={`sticky left-0 z-[1] max-w-[9rem] truncate px-3 py-2 font-medium ${mine ? "bg-[color-mix(in_oklab,var(--surface),var(--accent)_5%)] text-accent" : "bg-surface"}`}>
+                      {r.team}
+                      <div className="text-[10px] font-normal text-muted">{rec(r.matchups)} in matchups</div>
+                    </td>
+                    <td className="whitespace-nowrap px-2 py-2 text-right">
+                      {rec(r.allplay)}
+                      <div className="text-[10px] text-muted">{pct(frac(r.allplay))}</div>
+                    </td>
+                    <td className="whitespace-nowrap px-2 py-2 text-right">{rec(r.cat_record)}</td>
+                    {d.cats.map((c) => (
+                      <td key={c} className={`px-2 py-2 text-right ${d.punt.includes(c) && mine ? "text-muted" : ""}`}>
+                        {c.includes("%") ? r.totals[c].toFixed(3).replace(/^0/, "") : r.totals[c]}
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+      <p className="px-1 pt-2 text-xs text-muted">
+        All-play = categories won against every team, every week. Cat rec = categories won against your actual opponents.
+        Totals count active-lineup stats only, like Yahoo.
+      </p>
+    </>
+  );
 }

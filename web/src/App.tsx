@@ -14,7 +14,6 @@ const LEAGUES: { id: League; label: string; icon: string }[] = [
 const TABS: { id: BballTab; label: string; icon: string }[] = [
   { id: "matchup", label: "Matchup", icon: "M3 13h4v8H3zM10 8h4v13h-4zM17 3h4v18h-4z" },
   { id: "moves", label: "Moves", icon: "M12 5v14M5 12h14" },
-  { id: "wire", label: "Free agents", icon: "M4 6h16M4 12h16M4 18h10" },
   { id: "roster", label: "Roster", icon: "M16 11a4 4 0 1 0-8 0M4 21a8 8 0 0 1 16 0" },
   { id: "league", label: "Rankings", icon: "M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0zM17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3" },
 ];
@@ -56,7 +55,8 @@ export default function App() {
   const [state, setState] = useState<"loading" | "locked" | "ready" | "error">("loading");
   const [error, setError] = useState("");
   const [league, setLeague] = useLocal<League>("fd:league", "basketball");
-  const [tab, setTab] = useLocal<BballTab>("fd:tab", "matchup");
+  const [tabRaw, setTab] = useLocal<BballTab>("fd:tab", "matchup");
+  const tab: BballTab = (["matchup", "moves", "roster", "league"] as string[]).includes(tabRaw) ? tabRaw : "moves";
 
   const unlock = useCallback(async (p: string | null, remember = true, silent = false) => {
     if (!silent) setState("loading");
@@ -146,7 +146,7 @@ export default function App() {
 
       {league === "basketball" && bb && (
         <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-bg/85 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl">
-          <div className="mx-auto grid max-w-xl grid-cols-5">
+          <div className="mx-auto grid max-w-xl grid-cols-4">
             {TABS.map((t) => (
               <button
                 key={t.id}
