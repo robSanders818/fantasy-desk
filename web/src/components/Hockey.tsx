@@ -142,33 +142,50 @@ function TodayLineup({ d }: { d: HockeyLeague }) {
 
 function StatBreakdown({ me, them, themName }: { me: Record<string, number>; them: Record<string, number>; themName: string }) {
   const keys = Object.keys(STAT_LABEL).filter((k) => Math.abs(me[k] ?? 0) + Math.abs(them[k] ?? 0) > 0);
-  const max = Math.max(1, ...keys.map((k) => Math.max(Math.abs(me[k] ?? 0), Math.abs(them[k] ?? 0))));
+  // One bar per stat from the center toward whoever got more fantasy points from it:
+  // left and green = you, right and red = them. Length = the gap.
+  const maxGap = Math.max(1, ...keys.map((k) => Math.abs((me[k] ?? 0) - (them[k] ?? 0))));
+  const totalMe = keys.reduce((s, k) => s + (me[k] ?? 0), 0);
+  const totalThem = keys.reduce((s, k) => s + (them[k] ?? 0), 0);
   return (
     <>
       <SectionTitle aside="fantasy points from each stat">Where the points come from</SectionTitle>
       <Card className="px-4 py-3">
-        <div className="mb-2 grid grid-cols-[1fr_6.5rem_1fr] text-[11px] font-semibold uppercase tracking-wide text-muted">
-          <div className="text-right">You</div>
+        <div className="mb-1.5 grid grid-cols-[5.5rem_2.75rem_1fr_2.75rem] items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-muted">
           <div />
+          <div className="text-right">You</div>
+          <div className="flex justify-between px-1 normal-case tracking-normal">
+            <span className="text-up">◀ you ahead</span>
+            <span className="text-down">them ahead ▶</span>
+          </div>
           <div className="truncate">{themName.split(" ")[0]}</div>
         </div>
-        <div className="space-y-1.5">
+        <div className="space-y-1">
           {keys.map((k) => {
-            const a = me[k] ?? 0, b = them[k] ?? 0;
+            const a = me[k] ?? 0, b = them[k] ?? 0, gap = a - b;
+            const w = `${(Math.abs(gap) / maxGap) * 50}%`;
             return (
-              <div key={k} className="grid grid-cols-[1fr_6.5rem_1fr] items-center gap-2 text-xs tabular-nums">
-                <div className="flex items-center justify-end gap-1.5">
-                  <span className={a > b ? "font-semibold text-up" : ""}>{sgn(a)}</span>
-                  <div className="h-2 rounded-l bg-accent/70" style={{ width: `${(Math.abs(a) / max) * 100}%`, opacity: a < 0 ? 0.35 : 1 }} />
+              <div key={k} className="grid grid-cols-[5.5rem_2.75rem_1fr_2.75rem] items-center gap-2 text-xs tabular-nums">
+                <div className="truncate text-muted">{STAT_LABEL[k]}</div>
+                <div className={`text-right ${gap > 0.05 ? "font-semibold text-up" : ""}`}>{sgn(a)}</div>
+                <div className="relative h-3">
+                  <div className="absolute inset-y-0 left-1/2 w-px bg-line" />
+                  {gap > 0.05 && <div className="absolute inset-y-0.5 right-1/2 rounded-l bg-up" style={{ width: w }} />}
+                  {gap < -0.05 && <div className="absolute inset-y-0.5 left-1/2 rounded-r bg-down" style={{ width: w }} />}
                 </div>
-                <div className="text-center text-muted">{STAT_LABEL[k]}</div>
-                <div className="flex items-center gap-1.5">
-                  <div className="h-2 rounded-r bg-down/60" style={{ width: `${(Math.abs(b) / max) * 100}%`, opacity: b < 0 ? 0.35 : 1 }} />
-                  <span className={b > a ? "font-semibold text-down" : ""}>{sgn(b)}</span>
-                </div>
+                <div className={gap < -0.05 ? "font-semibold text-down" : ""}>{sgn(b)}</div>
               </div>
             );
           })}
+        </div>
+        <div className="mt-2 grid grid-cols-[5.5rem_2.75rem_1fr_2.75rem] items-center gap-2 border-t border-line pt-2 text-xs font-semibold tabular-nums">
+          <div>Total</div>
+          <div className={`text-right ${totalMe > totalThem ? "text-up" : ""}`}>{totalMe.toFixed(1)}</div>
+          <div className={`text-center text-[11px] ${totalMe >= totalThem ? "text-up" : "text-down"}`}>
+            {totalMe >= totalThem ? "you +" : "them +"}
+            {Math.abs(totalMe - totalThem).toFixed(1)}
+          </div>
+          <div className={totalThem > totalMe ? "text-down" : ""}>{totalThem.toFixed(1)}</div>
         </div>
       </Card>
     </>
