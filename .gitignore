@@ -15,3 +15,8 @@ web/dist/
 # Decrypted model inputs and scrape outputs (CI and local runs)
 pipeline/basketball/data/
 pipeline/out/
+
+# Hockey: Yahoo scrape outputs and per-run NHL refresh (history CSVs are committed: public NHL data)
+pipeline/hockey/data/yahoo/
+pipeline/hockey/data/nhl/schedule.csv
+pipeline/hockey/data/nhl/goalie_games.csv

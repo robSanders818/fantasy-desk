@@ -20,16 +20,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
+      # Each sport is its own step: if one fails, the others still publish and the page keeps
+      # the failed sport's last good data (encrypt.py --keep-previous).
       - name: Basketball (Yahoo scrape + week planner)
+        continue-on-error: true
         env:
           YAHOO_COOKIES: ${{ secrets.YAHOO_COOKIES }}
           FD_PASSPHRASE: ${{ secrets.FD_PASSPHRASE }}
         run: uv run pipeline/run_basketball.py
+      - name: Hockey (NHL refresh + Yahoo scrape + planner, rankings, playoff odds)
+        continue-on-error: true
+        env:
+          YAHOO_COOKIES: ${{ secrets.YAHOO_COOKIES }}
+          FD_PASSPHRASE: ${{ secrets.FD_PASSPHRASE }}
+        run: uv run pipeline/run_hockey.py
       - name: Encrypt for the page
         env:
           FD_PASSPHRASE: ${{ secrets.FD_PASSPHRASE }}
           FD_REFRESH_TOKEN: ${{ secrets.FD_REFRESH_TOKEN }}
-        run: uv run scripts/encrypt.py pipeline/out/basketball.json
+        run: uv run scripts/encrypt.py --keep-previous pipeline/out/basketball.json pipeline/out/hockey.json
       - name: Commit the encrypted data
         run: |
           git config user.name "fantasy-desk bot"

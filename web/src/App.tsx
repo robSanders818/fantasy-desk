@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { decryptBundle, rememberPassphrase, savedPassphrase } from "./crypto";
 import type { Bundle } from "./types";
 import { Basketball, type BballTab } from "./components/Basketball";
+import { Hockey } from "./components/Hockey";
 import { useRefresh, type RefreshState } from "./refresh";
 import { Sheet } from "./components/ui";
 
@@ -87,6 +88,7 @@ export default function App() {
   if (state === "error" || !bundle) return <Splash text={error || "Something went wrong"} />;
 
   const bb = bundle.leagues.basketball;
+  const hk = bundle.leagues.hockey;
   const updated = new Date(bundle.generated_at);
   const stale = Date.now() - updated.getTime() > 14 * 3600_000;
 
@@ -105,7 +107,7 @@ export default function App() {
         <RefreshBanner state={refresh.state} />
         <nav className="no-scrollbar -mx-4 mt-3 flex gap-2 overflow-x-auto px-4">
           {LEAGUES.map((l) => {
-            const live = !!bundle.leagues[l.id as "basketball"];
+            const live = !!bundle.leagues[l.id as "basketball" | "hockey"];
             const on = league === l.id;
             return (
               <button
@@ -126,10 +128,12 @@ export default function App() {
       <main className="px-4 pt-3">
         {league === "basketball" && bb ? (
           <Basketball d={bb} tab={tab} />
+        ) : league === "hockey" && hk ? (
+          <Hockey d={hk} tab={tab} />
         ) : (
           <div className="mt-16 text-center text-muted">
             <div className="text-4xl">{LEAGUES.find((l) => l.id === league)?.icon}</div>
-            <p className="mt-3 text-sm">Coming soon. Basketball is wired up first.</p>
+            <p className="mt-3 text-sm">Coming soon.</p>
           </div>
         )}
       </main>
@@ -145,7 +149,7 @@ export default function App() {
         />
       )}
 
-      {league === "basketball" && bb && (
+      {((league === "basketball" && bb) || (league === "hockey" && hk)) && (
         <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-bg/85 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl">
           <div className="mx-auto grid max-w-xl grid-cols-4">
             {TABS.map((t) => (

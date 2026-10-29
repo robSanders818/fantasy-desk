@@ -99,9 +99,55 @@ export interface SeasonRow {
   totals: CatMap;
 }
 
+export interface HkPlayer {
+  id: number;
+  name: string;
+  team: string;
+  pos: string;
+  status: string;
+}
+
+export interface HockeyLeague {
+  league: "hockey";
+  team: string;
+  opponent: string;
+  my_team_id: number;
+  opp_id: number;
+  week: { number: number; start: string; end: string; sim_from: string };
+  adds_used: number;
+  adds_left: number;
+  live: { me: number; opp: number; yahoo_proj_me?: number; yahoo_proj_opp?: number };
+  projected: { me: number; opp: number };
+  p_win: number;
+  with_plan: { p_win: number | null; me: number | null };
+  ros: { before: number; after: number | null };
+  by_stat: { me: Record<string, number>; opp: Record<string, number> };
+  player_pts: { me: { name: string; pts: number; bench_pts: number; games: number }[]; opp: { name: string; pts: number; bench_pts: number; games: number }[] };
+  lineup_today: {
+    starters: (HkPlayer & { slot: string; exp: number; p_play: number })[];
+    bench: (HkPlayer & { exp: number; why: string })[];
+    no_game: HkPlayer[];
+    started: HkPlayer[];
+    open_slots: string[];
+  };
+  plan: { day: string; add: HkPlayer; drop: HkPlayer; week_pts: number; total: number; games_added: number }[];
+  free_agents: (HkPlayer & { exp_fp: number; day: string; drop: HkPlayer; week_pts: number; total: number; games: number; games_added: number; avail: string })[];
+  roster: (HkPlayer & { slot: string; exp_fp: number; p_play: number; keep_value: number; rotatable: boolean; games_left: number; goalie: boolean; week_pts: number })[];
+  replacement: Record<string, number>;
+  this_week_vs: { rows: { team_id: number; team: string; pts: number; opponent: boolean; result: string; by_stat: Record<string, number> }[]; me_by_stat: Record<string, number>; me_pts: number };
+  rankings: { rank: number; team_id: number; team: string; proj_week: number; win_pct: number }[];
+  season: {
+    team_id: number; team: string; record: number[]; pf: number; pa: number; allplay: number[]; allplay_pct: number;
+    luck: number; playoff_odds: number; first_seed: number; proj_wins: number;
+    weeks: { week: number; pts: number; opp_pts: number; opp: number; final: boolean }[];
+  }[];
+  weekly_sd: number;
+  status?: { yahoo: string; scraped_at: string; live_today: number };
+}
+
 export interface Bundle {
   generated_at: string;
-  leagues: { basketball?: CategoryLeague };
+  leagues: { basketball?: CategoryLeague; hockey?: HockeyLeague };
   /** Fine-grained GitHub token (Actions read/write on the repo only), so the page can start an update. */
   refresh?: { repo: string; workflow: string; token: string };
 }
