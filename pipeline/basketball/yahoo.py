@@ -57,7 +57,14 @@ class Yahoo:
     def get(self, path: str) -> BeautifulSoup:
         if self.requests_made:
             time.sleep(PAUSE)
-        r = self.s.get(f"{BASE}{path}", timeout=30)
+        for attempt in range(3):                 # Yahoo occasionally stalls; retry timeouts / resets
+            try:
+                r = self.s.get(f"{BASE}{path}", timeout=30)
+                break
+            except (requests.Timeout, requests.ConnectionError):
+                if attempt == 2:
+                    raise
+                time.sleep(5 * (attempt + 1))
         self.requests_made += 1
         if r.status_code == 999:
             raise RuntimeError("Yahoo rate limit (999)")

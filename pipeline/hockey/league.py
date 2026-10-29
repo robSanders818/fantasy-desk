@@ -195,7 +195,18 @@ class League:
         r = pl.grp.map(repl).to_numpy()
         return pd.Series(np.maximum(pl.exp_fp - r, 0) * pl.team.map(left).fillna(0), index=pl.index), repl
 
-    def stream(self, opp, start, end, first_add, adds=5, pool=10, protect=(), S=500, cands=45, repl_rank=10):
+    def lineup_games(self, rosters_by_day, days, pm, S=400):
+        """Expected lineup games (players who actually fill a slot), split skaters / goalie starts."""
+        _, st = self.points(rosters_by_day, days, pm, S, detail=True)
+        g = sum(v for p, v in st.items() if self.pl.at[p, "grp"] == "G")
+        return {"skaters": sum(st.values()) - g, "goalies": g, "total": sum(st.values())}
+
+    def stream(self, opp, start, end, first_add, adds=5, pool=10, protect=(), S=500, cands=45, repl_rank=10,
+               objective="points", drop_only=None):
+        """objective="points": this week's points + rest-of-season value (any player droppable).
+        objective="week": this week's points only -- use with drop_only=the rotatable spots, so cycling
+        them for extra games costs nothing for the season (more games -> more points).
+        objective="games": lineup games this week (points break ties)."""
         days, pm = self.plays(start, end)
         D = len(days)
         f0 = days.index(first_add)
@@ -206,6 +217,9 @@ class League:
         opp_pts = self.points([self.roster(opp)] * D, days, pm, S).mean()
 
         def ev(plan):
+            if objective == "games":
+                tot, st = self.points(plan, days, pm, S, detail=True)
+                return sum(st.values()) + tot.mean() / 1000.0     # games first, points break ties
             return self.points(plan, days, pm, S).mean()
 
         games_after = {t: v[f0:].sum() for t, v in pm.items()}
@@ -215,7 +229,8 @@ class League:
         sk_c = fa[fa.grp != "G"].nlargest(cands, "wk").index.tolist()
         g_c = fa[fa.grp == "G"].nlargest(12, "wk").index.tolist()
         cand = sk_c + g_c
-        drops = sorted([p for p in active_mine if pl.at[p, "name"] not in protect],
+        drops = sorted([p for p in active_mine if pl.at[p, "name"] not in protect
+                        and (drop_only is None or p in drop_only)],
                        key=lambda p: pl.at[p, "exp_fp"])[:pool]
         V, repl = self.keep_value(end, repl_rank)
         ir = [p for p in mine if pl.at[p, "status"] in OUT_STATUS]
@@ -253,7 +268,7 @@ class League:
                         wk = ev(new) - cur
                         # rest of season: the swap's effect on your weekly lineup points, over the
                         # weeks left (a good player dropped is gone -- another team takes him)
-                        v = wk + (ros(new[-1]) - cur_ros) * W
+                        v = wk if objective in ("games", "week") else wk + (ros(new[-1]) - cur_ros) * W
                         if b is None or v > b[0]:
                             b = (v, d, x, wk)
                 if b:
@@ -264,7 +279,7 @@ class League:
         plan, taken, droppable, steps = base_plan, set(mine), [(x, 0) for x in drops], []
         for _ in range(adds):
             mv = best(plan, droppable, taken)
-            if not mv or mv[0][0] < 1.0:
+            if not mv or mv[0][0] < (0.5 if objective == "games" else 1.0):
                 break
             g, p, d, x, wk = mv[0]
             plan = apply(plan, p, x, d)

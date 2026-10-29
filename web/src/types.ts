@@ -107,6 +107,17 @@ export interface HkPlayer {
   status: string;
 }
 
+export interface HkPlan {
+  steps: {
+    day: string; add: HkPlayer; drop: HkPlayer; week_pts: number; games_added: number;
+    skater_games: number; goalie_starts: number; total: number;
+  }[];
+  ros_after: number;
+  games: { before: number; after: number; goalies_before: number; goalies_after: number };
+  points: { before: number; after: number };
+  p_win: number | null;
+}
+
 export interface HockeyLeague {
   league: "hockey";
   team: string;
@@ -131,6 +142,7 @@ export interface HockeyLeague {
     open_slots: string[];
   };
   plan: { day: string; add: HkPlayer; drop: HkPlayer; week_pts: number; total: number; games_added: number }[];
+  plans?: { week: HkPlan | null };
   free_agents: (HkPlayer & { exp_fp: number; day: string; drop: HkPlayer; week_pts: number; total: number; games: number; games_added: number; avail: string })[];
   roster: (HkPlayer & { slot: string; exp_fp: number; p_play: number; keep_value: number; rotatable: boolean; games_left: number; goalie: boolean; week_pts: number })[];
   replacement: Record<string, number>;

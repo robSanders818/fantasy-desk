@@ -272,68 +272,73 @@ function Moves({ d }: { d: HockeyLeague }) {
   const [sort, setSort] = useState<FaSort>("total");
   const fas = useMemo(() => [...d.free_agents].sort((a, b) => b[sort] - a[sort]), [d.free_agents, sort]);
   const rot = d.roster.filter((r) => r.rotatable);
+  const pl = d.plans?.week ?? null;
   return (
     <>
-      <Card className="p-4">
-        <div className="flex items-end justify-between gap-3">
-          <div>
-            <div className="text-xs text-muted">If you make every move</div>
-            <div className="mt-1 text-3xl font-bold tabular-nums">
-              {pct(d.p_win)} <span className="text-muted">→</span> <span className="text-up">{pct(d.with_plan.p_win ?? d.p_win)}</span>
-            </div>
-            <div className="mt-1 text-xs text-muted">
-              Projected {pts(d.projected.me, 0)} → {pts(d.with_plan.me ?? d.projected.me, 0)} points
-            </div>
-          </div>
-          {d.ros.after != null && (
-            <div className="text-right text-xs text-muted">
-              <div>Season pts / week</div>
-              <div className="mt-1 text-base font-semibold tabular-nums text-fg">
-                {d.ros.before.toFixed(0)} → {d.ros.after.toFixed(0)}
-              </div>
-            </div>
-          )}
-        </div>
-      </Card>
+      <SectionTitle aside={`${d.adds_left} of ${d.adds_left + d.adds_used} adds left`}>Streaming plan</SectionTitle>
+      <p className="px-1 pb-2 text-xs text-muted">
+        Most points this week, by cycling your rotatable spots to fit more games into the lineup. Never drops a player worth
+        keeping, so it doesn't cost you for the season.
+      </p>
 
-      <SectionTitle aside={`${d.adds_left} of ${d.adds_left + d.adds_used} adds left`}>Games-max plan</SectionTitle>
-      {d.plan.length === 0 && <Card className="p-4 text-sm text-muted">No move adds enough to spend an add.</Card>}
-      <ol className="space-y-2.5">
-        {[...d.plan].sort((a, b) => a.day.localeCompare(b.day)).map((s, i) => (
-          <li key={i}>
-            <Card className="p-4">
-              <div className="flex items-center justify-between">
-                <Badge tone="accent">{shortDay(s.day)}</Badge>
-                <div className="flex gap-1.5">
-                  <Delta v={s.week_pts}>{sgn(s.week_pts)} pts</Delta>
-                  {s.games_added !== 0 && <Delta v={s.games_added}>{sgn(s.games_added, 0)} games</Delta>}
-                </div>
-              </div>
-              <div className="mt-3 space-y-1.5 text-[15px]">
-                <div className="flex items-baseline gap-2">
-                  <span className="w-4 font-bold text-up">+</span>
-                  <span className="font-semibold">{s.add.name}</span>
-                  <span className="text-xs text-muted">{s.add.team} · {s.add.pos}</span>
-                </div>
-                <div className="flex items-baseline gap-2">
-                  <span className="w-4 font-bold text-down">−</span>
-                  <span>{s.drop.name}</span>
-                  <span className="text-xs text-muted">{s.drop.team} · {s.drop.pos}</span>
-                </div>
-              </div>
-              <div className="mt-2.5 text-xs text-muted">
-                Value incl. rest of season: <span className={s.total >= 0 ? "text-up" : "text-down"}>{sgn(s.total, 0)} pts</span>
-              </div>
-            </Card>
-          </li>
-        ))}
-      </ol>
+      {!pl ? (
+        <Card className="p-4 text-sm text-muted">No move adds enough points to spend an add{!rot.length ? " (no rotatable spots)" : ""}.</Card>
+      ) : (
+        <>
+          <Card className="grid grid-cols-3 divide-x divide-line p-0 text-center">
+            <Stat label="Lineup games" from={pl.games.before.toFixed(1)} to={pl.games.after.toFixed(1)} up={pl.games.after > pl.games.before} />
+            <Stat label="Win chance" from={pct(d.p_win)} to={pct(pl.p_win ?? d.p_win)} up={(pl.p_win ?? 0) > d.p_win} />
+            <Stat label="Season pts/wk" from={d.ros.before.toFixed(0)} to={pl.ros_after.toFixed(0)} up={pl.ros_after >= d.ros.before} />
+          </Card>
+          <p className="px-1 pt-1.5 text-[11px] text-muted">
+            Goalie starts {pl.games.goalies_before.toFixed(1)} → {pl.games.goalies_after.toFixed(1)} · projected {pl.points.before.toFixed(0)} →{" "}
+            {pl.points.after.toFixed(0)} pts this week
+          </p>
+
+          <ol className="mt-3 space-y-2.5">
+            {[...pl.steps].sort((a, b) => a.day.localeCompare(b.day)).map((s, i) => (
+              <li key={i}>
+                <Card className="p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <Badge tone="accent">{shortDay(s.day)}</Badge>
+                    <div className="flex flex-wrap justify-end gap-1.5">
+                      <Delta v={s.games_added}>{sgn(s.games_added)} games</Delta>
+                      <Delta v={s.week_pts}>{sgn(s.week_pts)} pts</Delta>
+                    </div>
+                  </div>
+                  <div className="mt-3 space-y-1.5 text-[15px]">
+                    <div className="flex items-baseline gap-2">
+                      <span className="w-4 font-bold text-up">+</span>
+                      <span className="font-semibold">{s.add.name}</span>
+                      <span className="text-xs text-muted">{s.add.team} · {s.add.pos}</span>
+                    </div>
+                    <div className="flex items-baseline gap-2">
+                      <span className="w-4 font-bold text-down">−</span>
+                      <span>{s.drop.name}</span>
+                      <span className="text-xs text-muted">{s.drop.team} · {s.drop.pos}</span>
+                    </div>
+                  </div>
+                  <div className="mt-2.5 text-xs text-muted">
+                    {Math.abs(s.skater_games) >= 0.05 && <>skater games {sgn(s.skater_games)}</>}
+                    {Math.abs(s.skater_games) >= 0.05 && Math.abs(s.goalie_starts) >= 0.05 && " · "}
+                    {Math.abs(s.goalie_starts) >= 0.05 && <>goalie starts {sgn(s.goalie_starts)}</>}
+                  </div>
+                </Card>
+              </li>
+            ))}
+          </ol>
+        </>
+      )}
       {rot.length > 0 && (
         <p className="px-1 pt-3 text-xs text-muted">
           <span className="font-semibold text-fg">Rotatable spots:</span> {rot.map((r) => r.name).join(", ")}. Each is at or below
-          what's on waivers, so dropping one to stream extra games costs nothing for the season.
+          what's on waivers, so cycling them for extra games costs little for the season.
         </p>
       )}
+      <p className="px-1 pt-2 text-xs text-muted">
+        Games = games that actually land in your lineup (an open slot that day; goalies only when they start), not just games on
+        the NHL schedule. Permanent upgrades worth more over the season show up below, sorted by Value.
+      </p>
 
       <SectionTitle
         aside={
@@ -383,6 +388,17 @@ function Moves({ d }: { d: HockeyLeague }) {
 }
 
 /* ---------------- Roster ---------------- */
+
+function Stat({ label, from, to, up }: { label: string; from: string; to: string; up: boolean }) {
+  return (
+    <div className="px-2 py-3">
+      <div className="text-[11px] text-muted">{label}</div>
+      <div className="mt-1 text-sm font-semibold tabular-nums">
+        <span className="text-muted">{from}</span> → <span className={up ? "text-up" : "text-down"}>{to}</span>
+      </div>
+    </div>
+  );
+}
 
 function Roster({ d }: { d: HockeyLeague }) {
   const max = Math.max(...d.roster.map((r) => r.exp_fp), 1);

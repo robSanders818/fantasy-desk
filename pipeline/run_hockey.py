@@ -158,6 +158,11 @@ def main() -> None:
     started_names = {pl_[0] for t in (Y.ME, opp) for yid, pl_ in today_day.get(str(t), {}).get("players", {}).items()
                      if int(yid) in today_day[str(t)]["started"]}
     L.skip_today = {by_name[model.norm(n)] for n in started_names if model.norm(n) in by_name}
+    # Anyone (free agents too) whose NHL team's game today has already started can't help today.
+    sch = pd.read_csv(HK / "data" / "nhl" / "schedule.csv")
+    gone = sch[(sch.date == today.isoformat()) & ~sch.state.isin(["FUT", "PRE"])]
+    started_teams = set(gone.home) | set(gone.away)
+    L.skip_today |= set(pl.index[pl.team.isin(started_teams)])
 
     cur_games = {(g["a"], g["b"]): g for g in home["games"]}
     live = {}
@@ -171,6 +176,12 @@ def main() -> None:
     adds_left = max(ADDS_PER_WEEK - adds_used, 0)
     plan = L.stream(opp, today.isoformat(), wk_end.isoformat(), first_add, adds=adds_left, S=400) if days else None
     w1 = L.week(opp, today.isoformat(), wk_end.isoformat(), plan=plan["plan"], banked=(live[Y.ME], live[opp])) if plan else w0
+    # The plan shown: maximize this week's points by cycling only the rotatable spots (no rest-of-season
+    # cost) -- in practice, fitting the most games into the lineup.
+    rot_ids = {p for p, v in plan["V"].items() if v <= 0.5} if plan else set()
+    gplan = L.stream(opp, today.isoformat(), wk_end.isoformat(), first_add, adds=adds_left, S=400,
+                     objective="week", drop_only=rot_ids) if days and rot_ids else None
+    w2 = L.week(opp, today.isoformat(), wk_end.isoformat(), plan=gplan["plan"], banked=(live[Y.ME], live[opp])) if gplan else w0
     log(f"model: {time.time() - t1:.0f}s")
 
     def player(pid: int) -> dict:
@@ -287,11 +298,39 @@ def main() -> None:
                 for i, r in enumerate(rank_df.itertuples())]
 
     # ---------- moves, roster, lineup ----------
-    steps = []
-    if plan:
-        for p, dd, x, g, wk in plan["steps"]:
-            steps.append({"day": days[dd], "add": player(p), "drop": player(x), "week_pts": round(wk, 1),
-                          "total": round(g, 1), "games_added": games_from(p, dd) - games_from(x, dd)})
+    base_ids = [p for p in L.roster(Y.ME) if pl.at[p, "status"] not in OUT_STATUS]
+    base_plan = [list(base_ids)] * len(days)
+
+    def apply(pln, add, drop, d):
+        return [r if i < d else [q for q in r if q != drop] + [add] for i, r in enumerate(pln)]
+
+    def detail(res, wk_res):
+        """Per move: lineup games added (skaters / goalie starts) and points added this week."""
+        if not res:
+            return None
+        cur = base_plan
+        g0 = L.lineup_games(cur, days, pm)
+        p0 = float(L.points(cur, days, pm, 400).mean())
+        prev_g, prev_p, rows = g0, p0, []
+        for p, dd, x, g, wk in res["steps"]:
+            cur = apply(cur, p, x, dd)
+            gm = L.lineup_games(cur, days, pm)
+            pt = float(L.points(cur, days, pm, 400).mean())
+            rows.append({"day": days[dd], "add": player(p), "drop": player(x), "week_pts": round(pt - prev_p, 1),
+                         "games_added": round(gm["total"] - prev_g["total"], 1),
+                         "skater_games": round(gm["skaters"] - prev_g["skaters"], 1),
+                         "goalie_starts": round(gm["goalies"] - prev_g["goalies"], 1),
+                         "total": round(g, 1)})
+            prev_g, prev_p = gm, pt
+        final = cur[-1] + [q for q in L.roster(Y.ME) if pl.at[q, "status"] in OUT_STATUS]
+        return {"steps": rows, "ros_after": round(L.ros_week(final), 1),
+                "games": {"before": round(g0["total"], 1), "after": round(prev_g["total"], 1),
+                          "goalies_before": round(g0["goalies"], 1), "goalies_after": round(prev_g["goalies"], 1)},
+                "points": {"before": round(p0 + live[Y.ME], 1), "after": round(prev_p + live[Y.ME], 1)},
+                "p_win": round(float(wk_res["p_win"]), 4) if wk_res else None}
+
+    plans = {"week": detail(gplan, w2)}
+    steps = plans["week"]["steps"] if plans["week"] else []
     singles = []
     if plan:
         for g, p, dd, x, wk in plan["singles"][:30]:
@@ -326,14 +365,14 @@ def main() -> None:
                  "yahoo_proj_opp": cur_games.get((min(Y.ME, opp), max(Y.ME, opp)), {}).get("proj_b" if Y.ME < opp else "proj_a")},
         "projected": {"me": round(w0["me"], 1) if w0 else live[Y.ME], "opp": round(w0["opp"], 1) if w0 else live[opp]},
         "p_win": round(float(w0["p_win"]), 4) if w0 else float(live[Y.ME] > live[opp]),
-        "with_plan": {"p_win": round(float(w1["p_win"]), 4) if w1 else None, "me": round(w1["me"], 1) if w1 else None},
+        "with_plan": {"p_win": round(float(w2["p_win"]), 4) if w2 else None, "me": round(w2["me"], 1) if w2 else None},
         "ros": {"before": round(L.ros_week([p for p in L.roster(Y.ME)]), 1),
                 "after": round(L.ros_week(plan["plan"][-1] + [p for p in L.roster(Y.ME) if pl.at[p, "status"] in OUT_STATUS]), 1)
                 if plan and plan["steps"] else None},
         "by_stat": {"me": team_stats[Y.ME], "opp": team_stats[opp]},
         "player_pts": {"me": player_pts[Y.ME], "opp": player_pts[opp]},
         "lineup_today": lineup,
-        "plan": steps, "free_agents": singles, "roster": roster,
+        "plan": steps, "plans": plans, "free_agents": singles, "roster": roster,
         "replacement": {k: round(float(v), 2) for k, v in plan["repl"].items()} if plan else {},
         "this_week_vs": {"rows": vs, "me_by_stat": team_stats[Y.ME], "me_pts": live[Y.ME]},
         "rankings": rankings, "season": season_rows, "weekly_sd": round(float(sd), 1),
