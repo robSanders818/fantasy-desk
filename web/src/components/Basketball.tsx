@@ -113,11 +113,155 @@ function Matchup({ d }: { d: CategoryLeague }) {
         Projected = week-to-date stats plus a simulation of the remaining days with daily lineups.
       </p>
       <VsEveryTeam d={d} />
+      <CategoryRanks d={d} />
     </>
   );
 }
 
 const rec = (r: number[]) => `${r[0]}–${r[1]}${r[2] ? `–${r[2]}` : ""}`;
+
+type Pt = { team_id: number; team: string; v: number; me: boolean; opp: boolean };
+
+/** Every team's value per category, this week (live) or season totals. */
+function categoryPoints(d: CategoryLeague, view: "week" | "season"): Record<string, Pt[]> | null {
+  const me = d.my_team_id;
+  const oppId = d.this_week_vs?.rows.find((r) => r.opponent)?.team_id;
+  const teams: { team_id: number; team: string; cats: Record<string, number> }[] = [];
+  if (view === "week") {
+    const v = d.this_week_vs;
+    if (!v?.me || v.rows.some((r) => !r.cats)) return null;
+    teams.push({ team_id: me ?? -1, team: d.team, cats: v.me });
+    v.rows.forEach((r) => teams.push({ team_id: r.team_id, team: r.team, cats: r.cats! }));
+  } else {
+    if (!d.season?.rows.length) return null;
+    d.season.rows.forEach((r) => teams.push({ team_id: r.team_id, team: r.team, cats: r.totals }));
+  }
+  const out: Record<string, Pt[]> = {};
+  for (const c of d.cats) {
+    const low = d.lower_is_better.includes(c);
+    out[c] = teams
+      .map((t) => ({ team_id: t.team_id, team: t.team, v: t.cats[c], me: t.team_id === me, opp: t.team_id === oppId }))
+      .sort((a, b) => (low ? a.v - b.v : b.v - a.v));
+  }
+  return out;
+}
+
+const ordinalShort = (n: number) => {
+  const s = ["th", "st", "nd", "rd"], v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+};
+
+function CategoryRanks({ d }: { d: CategoryLeague }) {
+  const [view, setView] = useState<"week" | "season">("week");
+  const [open, setOpen] = useState<string | null>(null);
+  const data = categoryPoints(d, view) ?? categoryPoints(d, "season");
+  if (!data) return null;
+  const n = data[d.cats[0]].length;
+  const rankOf = (c: string) => data[c].findIndex((p) => p.me) + 1;
+  const avg = d.cats.filter((c) => !d.punt.includes(c)).reduce((s, c) => s + rankOf(c), 0) / Math.max(1, d.cats.filter((c) => !d.punt.includes(c)).length);
+  return (
+    <>
+      {open && (
+        <Sheet onClose={() => setOpen(null)}>
+          <CategorySheet d={d} c={open} pts={data[open]} view={view} />
+        </Sheet>
+      )}
+      <SectionTitle
+        aside={
+          <div className="flex rounded-lg bg-line/60 p-0.5 text-xs font-medium">
+            {(
+              [
+                ["week", "This week"],
+                ["season", "Season"],
+              ] as const
+            ).map(([k, label]) => (
+              <button key={k} onClick={() => setView(k)} className={`rounded-md px-2.5 py-0.5 ${view === k ? "bg-surface text-fg shadow-sm" : "text-muted"}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+        }
+      >
+        Category ranks
+      </SectionTitle>
+      <Card className="px-4 pb-2 pt-3">
+        <div className="mb-1 flex items-center justify-between text-[11px] text-muted">
+          <span className="flex items-center gap-3">
+            <span className="flex items-center gap-1"><i className="inline-block h-2.5 w-2.5 rounded-full bg-accent" /> you</span>
+            <span className="flex items-center gap-1"><i className="inline-block h-2 w-2 rounded-full bg-down" /> opponent</span>
+            <span className="flex items-center gap-1"><i className="inline-block h-1.5 w-1.5 rounded-full bg-muted/60" /> others</span>
+          </span>
+          <span>better →</span>
+        </div>
+        <div className="divide-y divide-line">
+          {d.cats.map((c) => {
+            const pts = data[c];
+            const vals = pts.map((p) => p.v);
+            const lo = Math.min(...vals), hi = Math.max(...vals);
+            const low = d.lower_is_better.includes(c);
+            // position: 0 = worst, 1 = best
+            const pos = (v: number) => (hi === lo ? 0.5 : low ? (hi - v) / (hi - lo) : (v - lo) / (hi - lo));
+            const r = rankOf(c);
+            const punt = d.punt.includes(c);
+            const tone = r <= 3 ? "text-up" : r > n - 3 ? "text-down" : "text-fg";
+            const me = pts.find((p) => p.me)!;
+            return (
+              <button key={c} onClick={() => setOpen(c)} className={`grid w-full grid-cols-[3.25rem_1fr_3rem] items-center gap-3 py-2.5 text-left outline-none active:opacity-70 ${punt ? "opacity-45" : ""}`}>
+                <div>
+                  <div className="text-sm font-semibold">{c}</div>
+                  <div className="text-[10px] tabular-nums text-muted">{fmtCat(c, me.v)}</div>
+                </div>
+                <div className="relative h-5">
+                  <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-line" />
+                  <div className="absolute top-1/2 h-1 -translate-y-1/2 rounded-full bg-gradient-to-r from-down/25 via-transparent to-up/25" style={{ left: 0, right: 0 }} />
+                  {[...pts].sort((a, b) => Number(a.me || a.opp) - Number(b.me || b.opp)).map((p) => (
+                    <span
+                      key={p.team_id}
+                      className={`absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full ${
+                        p.me ? "z-[2] h-3.5 w-3.5 bg-accent ring-2 ring-surface" : p.opp ? "z-[1] h-2.5 w-2.5 bg-down ring-2 ring-surface" : "h-2 w-2 bg-muted/50"
+                      }`}
+                      style={{ left: `${4 + pos(p.v) * 92}%` }}
+                    />
+                  ))}
+                </div>
+                <div className={`text-right text-sm font-bold tabular-nums ${punt ? "text-muted" : tone}`}>{ordinalShort(r)}</div>
+              </button>
+            );
+          })}
+        </div>
+      </Card>
+      <p className="px-1 pt-2 text-xs text-muted">
+        Average rank in your categories: <span className="font-semibold text-fg">{avg.toFixed(1)}</span> of {n}
+        {view === "week" ? " (live this week)" : " (season totals)"}. Punted categories are dimmed. Tap a category for the full list.
+      </p>
+    </>
+  );
+}
+
+function CategorySheet({ d, c, pts, view }: { d: CategoryLeague; c: string; pts: Pt[]; view: "week" | "season" }) {
+  const low = d.lower_is_better.includes(c);
+  const vals = pts.map((p) => p.v);
+  const lo = Math.min(...vals), hi = Math.max(...vals);
+  const frac = (v: number) => (hi === lo ? 1 : 0.15 + 0.85 * (low ? (hi - v) / (hi - lo) : (v - lo) / (hi - lo)));
+  return (
+    <>
+      <div className="text-xs text-muted">{view === "week" ? "This week so far (live)" : "Season totals"}{low ? " · lower is better" : ""}</div>
+      <h3 className="mt-0.5 text-lg font-semibold">{c} ranking</h3>
+      <div className="mt-3 space-y-1.5">
+        {pts.map((p, i) => (
+          <div key={p.team_id} className="grid grid-cols-[1.25rem_7.5rem_1fr_3.25rem] items-center gap-2 text-sm">
+            <span className={`text-right text-xs tabular-nums ${p.me ? "font-bold text-accent" : "text-muted"}`}>{i + 1}</span>
+            <span className={`truncate ${p.me ? "font-semibold text-accent" : p.opp ? "font-medium text-down" : ""}`}>{p.team}</span>
+            <div className="h-2.5 overflow-hidden rounded-full bg-line/60">
+              <div className={`h-full rounded-full ${p.me ? "bg-accent" : p.opp ? "bg-down" : "bg-muted/50"}`} style={{ width: `${frac(p.v) * 100}%` }} />
+            </div>
+            <span className="text-right text-xs tabular-nums">{fmtCat(c, p.v)}</span>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
 
 function VsEveryTeam({ d }: { d: CategoryLeague }) {
   const v = d.this_week_vs;
