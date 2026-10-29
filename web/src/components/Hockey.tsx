@@ -149,15 +149,12 @@ function StatBreakdown({ me, them, themName }: { me: Record<string, number>; the
   const totalThem = keys.reduce((s, k) => s + (them[k] ?? 0), 0);
   return (
     <>
-      <SectionTitle aside="fantasy points from each stat">Where the points come from</SectionTitle>
+      <SectionTitle>Point Spread</SectionTitle>
       <Card className="px-4 py-3">
         <div className="mb-1.5 grid grid-cols-[5.5rem_2.75rem_1fr_2.75rem] items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-muted">
           <div />
           <div className="text-right">You</div>
-          <div className="flex justify-between px-1 normal-case tracking-normal">
-            <span className="text-up">◀ you ahead</span>
-            <span className="text-down">them ahead ▶</span>
-          </div>
+          <div />
           <div className="truncate">{themName.split(" ")[0]}</div>
         </div>
         <div className="space-y-1">
