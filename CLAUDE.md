@@ -39,5 +39,8 @@ scripts/encrypt.py         bundles every sport's JSON into web/public/data/desk.
   - IL slot or INJ status = out all week; "O" in an active slot = out today only.
   - Players whose game today has started are counted from their live stats, not simulated again.
 - **Hockey:** the scoreboard `/?matchup_week=W` gives every team's live points and Yahoo's projection. Daily lineup pages give player points and the stat breakdown.
-  - The planner scores each move as this week's points + the change in rest-of-season weekly points × weeks left. It respects positions (no Util slot) and has no protected players (the user's choice, 2026-10-28).
+  - The Moves plan (user's choice, 2026-10-28) maximizes **this week's points** by cycling only the **rotatable** spots: players at or below waiver level, where keep value V ≤ 0.5. So more games means more points, at no season cost.
+  - Each move reports the lineup games added (skater games / goalie starts, from the lineup simulation, not NHL schedule counts) and the points added.
+  - The full-value planner (this week + rest-of-season change × weeks left, any drop) still ranks the free-agent board. It respects positions (no Util slot), and there are no protected players.
+  - Players whose NHL game today has already started (schedule state) can't count today.
   - Weekly SD comes from finished weeks' scores. Playoff odds: 20,000 simulations, top 4, ties broken by PF.
