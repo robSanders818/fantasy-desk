@@ -34,10 +34,17 @@ scripts/encrypt.py         bundles every sport's JSON into web/public/data/desk.
 - **Run locally:** `uv run --group local pipeline/run_<sport>.py --local`, then `cp pipeline/out/<sport>.json web/sample/` and `cd web && npx vite`. In dev, the page loads the unencrypted samples.
 - **The user decides publishing actions:** creating repos and enabling Pages were blocked for Claude, and the user ran them.
 
+## Failures
+- The Yahoo login expires after about 5 days: a saved session from 10/27 died 11/1. A dead login shows up as a redirect loop, and the scrapers raise SessionExpired for it.
+- A failed runner writes `pipeline/out/<sport>.error.json` (reason only). `encrypt.py --keep-previous` then republishes that sport's last data with `status.stale` + `status.error`, and the page shows a red banner. The page also shows the banner when the week shown has already ended.
+- The `check` job in update.yml fails the run (red X + email) if any sport failed.
+- Fix an expired login: `uv run --group local yahoo_session.py` (the user runs it), then tap Refresh.
+
 ## Sport notes
 - **Basketball:** Yahoo's matchup page loads its scores with JavaScript, so week-to-date totals are summed from each day's active lineup (`/{team}?date=D&stat1=S&stat2=D`).
   - IL slot or INJ status = out all week; "O" in an active slot = out today only.
   - Players whose game today has started are counted from their live stats, not simulated again.
+  - Roster tab "Today's lineup" (stream.py `today_lineup`): each player with a game is valued by P(win week) with him starting minus benched today. Slots fill in that order, most specific slot first. The tab lists the changes vs the current Yahoo slots. Game and tip-off text comes from Yahoo's day page.
 - **Hockey:** the scoreboard `/?matchup_week=W` gives every team's live points and Yahoo's projection. Daily lineup pages give player points and the stat breakdown.
   - The Moves plan (user's choice, 2026-10-28) maximizes **this week's points** by cycling only the **rotatable** spots: players at or below waiver level, where keep value V ≤ 0.5. So more games means more points, at no season cost.
   - Each move reports the lineup games added (skater games / goalie starts, from the lineup simulation, not NHL schedule counts) and the points added.
