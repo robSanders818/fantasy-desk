@@ -40,12 +40,21 @@ def main() -> None:
         print(f"Saved the passphrase to the {REPO} secret FD_PASSPHRASE.")
     if not a.files:
         return
-    leagues = {Path(f).stem: json.loads(Path(f).read_text()) for f in a.files if Path(f).exists()}
+    # A sport whose runner failed this run leaves <sport>.error.json (reason only) instead of fresh JSON.
+    errors = {}
+    for f in a.files:
+        err = Path(f).with_name(Path(f).stem + ".error.json")
+        if err.exists():
+            errors[Path(f).stem] = json.loads(err.read_text()).get("reason", "failed")
+    leagues = {Path(f).stem: json.loads(Path(f).read_text()) for f in a.files
+               if Path(f).exists() and Path(f).stem not in errors}
     if a.keep_previous and OUT.exists():
         prev = json.loads(gzip.decompress(decrypt(OUT.read_bytes(), b"FDK1", pw)))
         for k, v in prev.get("leagues", {}).items():
             if k not in leagues:
-                v.setdefault("status", {})["stale"] = True      # this sport's update failed; showing the last good one
+                st = v.setdefault("status", {})
+                st["stale"] = True                   # this sport's update failed; showing the last good one
+                st["error"] = errors.get(k, "failed")
                 leagues[k] = v
     if not leagues:
         print("nothing to encrypt")

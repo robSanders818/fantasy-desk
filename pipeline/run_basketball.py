@@ -57,6 +57,7 @@ def main() -> None:
                     help="max missing past days to fetch this run (10 requests each); use a big number locally")
     a = ap.parse_args()
     t0 = time.time()
+    (OUT / "basketball.error.json").unlink(missing_ok=True)
     OUT.mkdir(exist_ok=True)
     status = {"yahoo": "ok", "errors": []}
 
@@ -195,5 +196,22 @@ def main() -> None:
     log(f"done in {time.time() - t0:.0f}s")
 
 
+def _fail(reason: str) -> None:
+    OUT.mkdir(exist_ok=True)
+    (OUT / "basketball.error.json").write_text(json.dumps({"reason": reason}))
+
+
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Y.SessionExpired:
+        _fail("yahoo_session_expired")
+        log("Yahoo session expired -- re-run yahoo_session.py")
+        sys.exit(2)
+    except SystemExit as e:
+        if e.code not in (0, None):
+            _fail("yahoo_session_expired" if e.code == 2 else "failed")
+        raise
+    except Exception:
+        _fail("failed")
+        raise

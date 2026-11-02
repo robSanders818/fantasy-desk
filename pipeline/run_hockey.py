@@ -82,6 +82,7 @@ def main() -> None:
     ap.add_argument("--skip-nhl", action="store_true", help="reuse the NHL files already on disk")
     a = ap.parse_args()
     t0 = time.time()
+    (OUT / "hockey.error.json").unlink(missing_ok=True)
     OUT.mkdir(exist_ok=True)
 
     today = date.fromisoformat(a.today) if a.today else datetime.now(ZoneInfo("America/New_York")).date()
@@ -383,5 +384,22 @@ def main() -> None:
     log(f"done in {time.time() - t0:.0f}s")
 
 
+def _fail(reason: str) -> None:
+    OUT.mkdir(exist_ok=True)
+    (OUT / "hockey.error.json").write_text(json.dumps({"reason": reason}))
+
+
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Y.SessionExpired:
+        _fail("yahoo_session_expired")
+        log("Yahoo session expired -- re-run yahoo_session.py")
+        sys.exit(2)
+    except SystemExit as e:
+        if e.code not in (0, None):
+            _fail("yahoo_session_expired" if e.code == 2 else "failed")
+        raise
+    except Exception:
+        _fail("failed")
+        raise

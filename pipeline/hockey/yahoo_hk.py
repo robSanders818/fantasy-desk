@@ -60,6 +60,7 @@ class Yahoo:
         self.s = requests.Session()
         self.s.cookies.update(self.cookies)
         self.s.headers["User-Agent"] = UA
+        self.s.max_redirects = 10
 
     @classmethod
     def from_env(cls) -> "Yahoo":
@@ -72,6 +73,8 @@ class Yahoo:
             try:
                 r = self.s.get(f"{BASE}{path}", timeout=30)
                 break
+            except requests.TooManyRedirects:
+                raise SessionExpired()               # Yahoo loops a request with a dead login through sign-in
             except (requests.Timeout, requests.ConnectionError):
                 if attempt == 2:
                     raise

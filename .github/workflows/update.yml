@@ -17,18 +17,23 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      basketball: ${{ steps.basketball.outcome }}
+      hockey: ${{ steps.hockey.outcome }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
       # Each sport is its own step: if one fails, the others still publish and the page keeps
       # the failed sport's last good data (encrypt.py --keep-previous).
       - name: Basketball (Yahoo scrape + week planner)
+        id: basketball
         continue-on-error: true
         env:
           YAHOO_COOKIES: ${{ secrets.YAHOO_COOKIES }}
           FD_PASSPHRASE: ${{ secrets.FD_PASSPHRASE }}
         run: uv run pipeline/run_basketball.py
       - name: Hockey (NHL refresh + Yahoo scrape + planner, rankings, playoff odds)
+        id: hockey
         continue-on-error: true
         env:
           YAHOO_COOKIES: ${{ secrets.YAHOO_COOKIES }}
@@ -54,3 +59,19 @@ jobs:
       pages: write
       id-token: write
     uses: ./.github/workflows/deploy.yml
+
+  # After publishing, fail the run if any sport failed, so it shows red and GitHub emails.
+  # (The page still published: the other sports are fresh and a failed one keeps its last data.)
+  check:
+    needs: [update, deploy]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Did every sport update?
+        run: |
+          echo "basketball: ${{ needs.update.outputs.basketball }}"
+          echo "hockey: ${{ needs.update.outputs.hockey }}"
+          if [ "${{ needs.update.outputs.basketball }}" != "success" ] || [ "${{ needs.update.outputs.hockey }}" != "success" ]; then
+            echo "::error::A sport failed to update (most often the Yahoo session expired: run 'uv run --group local yahoo_session.py' on the Mac)."
+            exit 1
+          fi

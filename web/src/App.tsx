@@ -126,6 +126,7 @@ export default function App() {
       </header>
 
       <main className="px-4 pt-3">
+        <StaleBanner d={league === "basketball" ? bb : league === "hockey" ? hk : undefined} />
         {league === "basketball" && bb ? (
           <Basketball d={bb} tab={tab} />
         ) : league === "hockey" && hk ? (
@@ -187,6 +188,32 @@ function RefreshButton({ state, onClick }: { state: RefreshState; onClick: () =>
         <path d="M21 12a9 9 0 1 1-2.64-6.36M21 4v5h-5" />
       </svg>
     </button>
+  );
+}
+
+/** Warn when this sport's numbers are old: its last update failed, or the matchup is from a past week. */
+function StaleBanner({ d }: { d?: { status?: { scraped_at?: string; stale?: boolean; error?: string }; week?: { end: string } } }) {
+  if (!d) return null;
+  const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD, local time
+  const pastWeek = !!d.week?.end && d.week.end < today;
+  if (!d.status?.stale && !pastWeek) return null;
+  const when = d.status?.scraped_at
+    ? new Date(d.status.scraped_at).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" })
+    : "an earlier update";
+  const expired = d.status?.error === "yahoo_session_expired";
+  return (
+    <div className="mb-3 rounded-xl bg-down/10 px-3.5 py-3 text-sm ring-1 ring-down/30">
+      <div className="font-semibold text-down">
+        {expired ? "Yahoo login expired, so this didn't update" : d.status?.stale ? "The last update failed" : "This is last week's matchup"}
+      </div>
+      <div className="mt-0.5 text-xs text-muted">
+        Showing data from {when}
+        {pastWeek ? ", before this week's matchup started" : ""}.{" "}
+        {expired
+          ? "On the Mac, run: uv run --group local yahoo_session.py (in FantasyDesk), then tap ↻."
+          : "Tap ↻ to try again."}
+      </div>
+    </div>
   );
 }
 
