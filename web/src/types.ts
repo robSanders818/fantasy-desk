@@ -55,6 +55,14 @@ export interface RankRow {
   vs: Record<string, number>; // P(win a week) vs each other team, by team_id
 }
 
+export interface LineupPlayer extends Player {
+  cur_slot: string;
+  slot?: string;
+  d_win?: number;
+  game?: string;
+  line: Record<string, number>;
+}
+
 export interface CategoryLeague {
   league: "basketball";
   generated_at: string;
@@ -79,6 +87,16 @@ export interface CategoryLeague {
   roster: RosterPlayer[];
   rankings?: RankRow[];
   my_team_id?: number;
+  lineup_today?: {
+    date: string;
+    starters: LineupPlayer[];
+    bench: LineupPlayer[];
+    locked: LineupPlayer[];
+    out: (Player & { game?: string })[];
+    no_game: Player[];
+    open_slots: string[];
+    changes: string[];
+  } | null;
   this_week_vs?: {
     rows: { team_id: number; team: string; record: number[]; opponent: boolean; cats?: CatMap }[];
     total: number[];

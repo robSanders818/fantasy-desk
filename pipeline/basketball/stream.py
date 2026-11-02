@@ -42,6 +42,7 @@ ap.add_argument("--plan", nargs="*", help='evaluate your own moves instead: "Add
 ap.add_argument("--banked", nargs=2, metavar=("ME", "OPP"),
                 help="week-to-date totals 'FGM/FGA,FTM/FTA,3PTM,PTS,REB,AST,ST,BLK,TO' for you and the opponent; simulate only --start..--end")
 ap.add_argument("--out-days", nargs="*", default=[], help='"Name=YYYY-MM-DD,..." out only on those days (overrides an O status)')
+ap.add_argument("--started", nargs="*", default=[], help="names whose game today already started (lineup locked)")
 ap.add_argument("--il", nargs="*", default=[], help="move these to an IL slot (frees a roster spot each)")
 ap.add_argument("--roster-size", type=int, default=17, help="active (non-IL) roster spots")
 ap.add_argument("--objective", default="win", choices=["win", "cats"], help="maximise P(win week) or expected cats")
@@ -374,6 +375,60 @@ if args.json:
                 "p_cat": {c: round(float(v), 4) for c, v in zip(CATS, pc_)}, "starts": round(float(sum(stx.values())), 1)}
 
     base_out = outcome(base)
+
+    def today_lineup():
+        """Best lineup for today's games, and how much starting each player is worth (P(win week)
+        with him starting vs benched today -- the bench fills in behind him either way)."""
+        if not days or days[0] != args.start:
+            return None
+        team_rows = s[s.team_id == args.me]
+        cur_slot = dict(zip(team_rows.player_id, team_rows.slot))
+        started = {by_name_all[n] for n in args.started if n in by_name_all}
+        game_today = lambda p: bool(plays.get(df.at[p, "nba_team"], np.zeros(D, bool))[0])
+        slot_name = lambda i: "Util" if SLOTS[i] == "UTIL" else SLOTS[i]
+        ros = [p for p in mine_all if game_today(p)]
+        locked = [p for p in ros if p in started]
+        out_today = [p for p in ros if p not in started and (status.get(p, "") in OUT or p in il_slot | moved
+                                                            or 0 in out_days.get(p, []))]
+        cands = [p for p in ros if p not in started and p not in out_today]
+        free = list(range(len(SLOTS)))
+        for p in locked:                                   # a started player keeps his Yahoo slot
+            i = next((i for i in free if slot_name(i) == cur_slot.get(p)), None)
+            if i is not None:
+                free.remove(i)
+        def line(p):
+            v = pg(p)
+            return {k: round(float(v[COUNT.index(k)]), 1) for k in ("PTS", "REB", "AST", "3PTM", "ST", "BLK")}
+        def value(p):                                      # P(win) lost if he sits today
+            keep = out_days.get(p)
+            out_days[p] = sorted(set((keep or []) + [0]))
+            _act.pop(p, None)
+            pw = outcome(base)["p_win"]
+            if keep is None:
+                out_days.pop(p)
+            else:
+                out_days[p] = keep
+            _act.pop(p, None)
+            return round(base_out["p_win"] - pw, 4)
+        # Fill slots in order of how much each start adds to P(win the week), most specific slot first.
+        val = {p: value(p) for p in cands}
+        assign = {}
+        for p in sorted(cands, key=lambda p: -val[p]):
+            i = next((i for i in SLOT_ORDER if i in free and sim.elig[p][i]), None)
+            if i is not None:
+                free.remove(i)
+                assign[p] = i
+        row = lambda p, **k: {**info(p), "cur_slot": str(cur_slot.get(p, "")), "line": line(p), **k}
+        starters = sorted((row(p, slot=slot_name(i), d_win=val[p]) for p, i in assign.items()),
+                          key=lambda r: SLOTS.index("UTIL" if r["slot"] == "Util" else r["slot"]))
+        bench = [row(p, d_win=val[p]) for p in cands if p not in assign]
+        changes = [f"Start {r['name']} at {r['slot']}" for r in starters if r["cur_slot"] in ("BN", "")]
+        changes += [f"Bench {r['name']}" for r in bench if r["cur_slot"] not in ("BN", "IL", "IL+", "")]
+        return {"date": args.start, "starters": starters, "bench": sorted(bench, key=lambda r: -r["d_win"]),
+                "locked": [row(p, slot=str(cur_slot.get(p, ""))) for p in locked],
+                "out": [info(p) for p in out_today], "no_game": [info(p) for p in mine_all if not game_today(p)],
+                "open_slots": [slot_name(i) for i in free], "changes": changes}
+
     fa_rows = []
     for gain, p, d, x in moves[:30]:
         o = outcome(apply(base, p, x, d))
@@ -409,7 +464,7 @@ if args.json:
         "projected": {"me": catd(e._cats(base_tot.mean(0) + BANK_ME)), "opp": catd(e._cats(opp_tot.mean(0) + BANK_OPP))},
         "current": base_out, "with_plan": final,
         "ros": {"before": round(base_ros * 100, 1), "after": round(ros(plan[-1]) * 100, 1)},
-        "plan": plan_rows, "free_agents": fa_rows, "roster": roster_rows,
+        "plan": plan_rows, "free_agents": fa_rows, "roster": roster_rows, "lineup_today": today_lineup(),
     }
     Path(args.json).write_text(json.dumps(out, indent=1, ensure_ascii=False))
     print(f"\nwrote {args.json}")

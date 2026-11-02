@@ -181,7 +181,7 @@ def league_home(y: Yahoo) -> tuple[int, int, list[dict], list[list[int]]]:
 STARTED = re.compile(r"(?:^|\s)(?:[WL], \d+-\d+|Q[1-4]\b|OT\b|\dOT\b|Half|End of|Final)")
 
 
-def day_totals(y: Yahoo, team: int, day: date) -> tuple[list[float], set[str]]:
+def day_totals(y: Yahoo, team: int, day: date, games: dict | None = None) -> tuple[list[float], set[str]]:
     """Counting stats a team has banked on one date (live for today): players in active slots only
     (bench/IL don't count). Returns ([FGM, FGA, FTM, FTA, 3PTM, PTS, REB, AST, ST, BLK, TO], names
     of the team's players whose game that day has started or finished)."""
@@ -198,6 +198,8 @@ def day_totals(y: Yahoo, team: int, day: date) -> tuple[list[float], set[str]]:
         game = re.sub(r".*?[A-Z]{2,4} - [A-Z,]+", "", clean(cell.get_text(" "))) if cell else ""
         if STARTED.search(game):
             started.add(p[1])
+        if games is not None:
+            games[p[1]] = game.strip()                     # e.g. "7:30 pm vs BOS", "Q2 5:12, 40-38 @ LAL", "W, 112-104 vs SAC"
         c = [clean(x.get_text()) for x in row.find_all("td")]
         if c[0] in ("BN", "IL", "IL+"):
             continue

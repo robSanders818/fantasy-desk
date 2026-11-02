@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { CategoryLeague, FreeAgent, RankRow, SeasonRow } from "../types";
+import type { CategoryLeague, FreeAgent, LineupPlayer, RankRow, SeasonRow } from "../types";
 import { Badge, Card, Delta, ProbBar, SectionTitle, Sheet, StatusBadge, WinRing, pct, shortDay, signed, signedPts } from "./ui";
 
 const fmtCat = (c: string, v: number | undefined) =>
@@ -16,7 +16,13 @@ export function Basketball({ d, tab }: { d: CategoryLeague; tab: BballTab }) {
         <Wire d={d} />
       </>
     );
-  if (tab === "roster") return <Roster d={d} />;
+  if (tab === "roster")
+    return (
+      <>
+        <TodayLineup d={d} />
+        <Roster d={d} />
+      </>
+    );
   if (tab === "league") return <Rankings d={d} />;
   return <Matchup d={d} />;
 }
@@ -487,6 +493,86 @@ function FaRow({ f, d, open, toggle }: { f: FreeAgent; d: CategoryLeague; open: 
         </div>
       )}
     </div>
+  );
+}
+
+function TodayLineup({ d }: { d: CategoryLeague }) {
+  const lu = d.lineup_today;
+  if (!lu) return null;
+  const maxWin = Math.max(0.001, ...lu.starters.concat(lu.bench).map((r) => r.d_win ?? 0));
+  const statLine = (r: LineupPlayer) =>
+    [["PTS", "pts"], ["REB", "reb"], ["AST", "ast"], ["3PTM", "3s"], ["ST", "stl"], ["BLK", "blk"]]
+      .map(([k, l]) => `${r.line[k]} ${l}`)
+      .join(" · ");
+  const Row = ({ r, benched }: { r: LineupPlayer; benched?: boolean }) => {
+    const moved = benched ? !["BN", "IL", "IL+", ""].includes(r.cur_slot) : ["BN", ""].includes(r.cur_slot);
+    return (
+      <div className={`flex items-center gap-3 px-4 py-2.5 ${benched ? "opacity-75" : ""}`}>
+        <span className={`w-9 shrink-0 text-center text-xs font-bold ${benched ? "text-muted" : "text-accent"}`}>{benched ? "BN" : r.slot}</span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className="truncate font-medium">{r.name}</span>
+            <StatusBadge status={r.status} />
+            {moved && <Badge tone="warn">{benched ? "bench" : "start"}</Badge>}
+          </div>
+          <div className="truncate text-[11px] text-muted">{r.game || `${r.team} · ${r.pos}`}</div>
+          <div className="truncate text-[11px] text-muted">{statLine(r)}</div>
+        </div>
+        <div className="w-16 shrink-0 text-right">
+          <div className={`text-sm font-semibold tabular-nums ${benched ? "text-muted" : "text-up"}`}>+{((r.d_win ?? 0) * 100).toFixed(1)}%</div>
+          <div className="ml-auto mt-1 h-1 w-14 overflow-hidden rounded-full bg-line">
+            <div className={`h-full rounded-full ${benched ? "bg-muted/60" : "bg-up"}`} style={{ width: `${((r.d_win ?? 0) / maxWin) * 100}%` }} />
+          </div>
+        </div>
+      </div>
+    );
+  };
+  return (
+    <>
+      <SectionTitle aside={shortDay(lu.date)}>Today's lineup</SectionTitle>
+      {lu.changes.length > 0 ? (
+        <Card className="mb-2 bg-warn/10 px-4 py-3 ring-warn/30">
+          <div className="text-sm font-semibold">
+            {lu.changes.length} change{lu.changes.length === 1 ? "" : "s"} to make in Yahoo
+          </div>
+          <ul className="mt-1 space-y-0.5 text-sm">
+            {lu.changes.map((c) => (
+              <li key={c}>{c.startsWith("Bench") ? "↓" : "↑"} {c}</li>
+            ))}
+          </ul>
+        </Card>
+      ) : (
+        <Card className="mb-2 px-4 py-3 text-sm text-muted">Your Yahoo lineup already matches the best one for today.</Card>
+      )}
+      <Card className="divide-y divide-line">
+        {lu.starters.map((r) => <Row key={r.id} r={r} />)}
+        {lu.locked.map((r) => (
+          <div key={r.id} className="flex items-center gap-3 px-4 py-2.5 opacity-60">
+            <span className="w-9 shrink-0 text-center text-xs font-bold text-muted">{r.slot}</span>
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-medium">{r.name}</div>
+              <div className="truncate text-[11px] text-muted">{r.game} · locked, game started</div>
+            </div>
+          </div>
+        ))}
+      </Card>
+      {lu.bench.length > 0 && (
+        <>
+          <div className="px-1 pb-1.5 pt-3 text-xs font-semibold uppercase tracking-wide text-muted">Sit (has a game, no slot)</div>
+          <Card className="divide-y divide-line">{lu.bench.map((r) => <Row key={r.id} r={r} benched />)}</Card>
+        </>
+      )}
+      {lu.open_slots.length > 0 && (
+        <p className="px-1 pt-2 text-xs text-warn">Open today: {lu.open_slots.join(", ")}. A free agent with a game tonight could fill it.</p>
+      )}
+      <p className="px-1 pt-2 text-xs text-muted">
+        +% = how much starting him today raises your chance of winning the week (vs benching him and letting the next best
+        player in). Lineup is filled in that order, most specific slot first.
+        {lu.out.length ? ` Out: ${lu.out.map((r) => r.name).join(", ")}.` : ""}
+        {lu.no_game.length ? ` No game: ${lu.no_game.map((r) => r.name).join(", ")}.` : ""}
+      </p>
+      <SectionTitle>Season value</SectionTitle>
+    </>
   );
 }
 

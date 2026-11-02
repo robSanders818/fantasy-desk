@@ -96,8 +96,9 @@ def main() -> None:
         for d in sorted(set(gaps + yesterday_only)):
             store["days"][d.isoformat()] = {str(t): Y.day_totals(y, t, d)[0] for t in teams}
         today_tot, started_by = {}, {}
+        my_games = {}
         for t in teams:
-            today_tot[t], started_by[t] = Y.day_totals(y, t, today)
+            today_tot[t], started_by[t] = Y.day_totals(y, t, today, games=my_games if t == Y.ME else None)
         store["pairs"][str(week_no)] = pairs_now
         for w in range(1, week_no):
             if str(w) not in store["pairs"]:
@@ -158,6 +159,8 @@ def main() -> None:
         cmd += ["--banked", bank_me, bank_opp]
     if out_days:
         cmd += ["--out-days", *out_days]
+    if started_me:
+        cmd += ["--started", *sorted(started_me)]
     t1 = time.time()
     r = subprocess.run(cmd, cwd=BB, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
     if r.returncode != 0:
@@ -187,6 +190,11 @@ def main() -> None:
     d["season"] = R.season(live_days, store["pairs"], today, names)
     d["rankings"] = json.loads(rank_path.read_text()) if rank_path.exists() and r.returncode == 0 else []
     d["my_team_id"] = Y.ME
+    lu = d.get("lineup_today")
+    if lu:
+        for k in ("starters", "bench", "locked", "out"):
+            for r in lu.get(k, []):
+                r["game"] = my_games.get(r["name"], "")
     d["week"] = {"number": week_no, "start": wk_start.isoformat(), "end": wk_end.isoformat(), "sim_from": today.isoformat()}
     d["adds_used"] = adds_used
     d["alerts"] = alerts
