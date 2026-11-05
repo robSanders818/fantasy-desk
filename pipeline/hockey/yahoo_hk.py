@@ -38,6 +38,30 @@ class SessionExpired(Exception):
     pass
 
 
+def cookie_jar(cookies) -> requests.cookies.RequestsCookieJar:
+    """Domain-scoped cookie jar. `cookies` is a list of {name, value, domain, path, expires, secure}
+    (yahoo_session.py) or, from older saves, a flat {name: value} dict. Domains matter: Yahoo uses the
+    same cookie names on different sub-sites, and the Fantasy site's session is re-issued from the
+    main login (T/Y on .yahoo.com) through a redirect that only works with correctly scoped cookies."""
+    jar = requests.cookies.RequestsCookieJar()
+    if isinstance(cookies, dict):
+        for k, v in cookies.items():
+            jar.set(k, v, domain=".yahoo.com", path="/")
+        return jar
+    for c in cookies:
+        jar.set(c["name"], c["value"], domain=c["domain"], path=c.get("path") or "/",
+                expires=int(c["expires"]) if c.get("expires") else None, secure=bool(c.get("secure")))
+    return jar
+
+
+def login_expires(cookies) -> str | None:
+    """Earliest expiry (YYYY-MM-DD) of the main login cookies, if known."""
+    if isinstance(cookies, dict):
+        return None
+    exp = [c["expires"] for c in cookies if c.get("name") in ("T", "Y") and c.get("expires")]
+    return date.fromtimestamp(min(exp)).isoformat() if exp else None
+
+
 def clean(s: str) -> str:
     return re.sub(r"\s+", " ", "".join(ch for ch in s if not 0xE000 <= ord(ch) <= 0xF8FF)).strip()
 
@@ -58,7 +82,7 @@ class Yahoo:
 
     def __post_init__(self):
         self.s = requests.Session()
-        self.s.cookies.update(self.cookies)
+        self.s.cookies = cookie_jar(self.cookies)
         self.s.headers["User-Agent"] = UA
         self.s.max_redirects = 10
 

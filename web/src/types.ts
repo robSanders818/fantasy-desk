@@ -71,7 +71,7 @@ export interface CategoryLeague {
   week: { number?: number; start: string; end: string; sim_from?: string };
   adds_used?: number;
   alerts?: { kind: "il" | "activate" | "info"; text: string }[];
-  status?: { yahoo: string; scraped_at: string; days_banked: number; stale?: boolean; error?: string };
+  status?: { yahoo: string; scraped_at: string; days_banked: number; stale?: boolean; error?: string; login_expires?: string | null };
   cats: string[];
   punt: string[];
   lower_is_better: string[];
@@ -172,7 +172,7 @@ export interface HockeyLeague {
     weeks: { week: number; pts: number; opp_pts: number; opp: number; final: boolean }[];
   }[];
   weekly_sd: number;
-  status?: { yahoo: string; scraped_at: string; live_today: number; stale?: boolean; error?: string };
+  status?: { yahoo: string; scraped_at: string; live_today: number; stale?: boolean; error?: string; login_expires?: string | null };
 }
 
 export interface Bundle {

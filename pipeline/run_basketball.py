@@ -199,6 +199,7 @@ def main() -> None:
     d["adds_used"] = adds_used
     d["alerts"] = alerts
     d["status"] = {**status, "scraped_at": datetime.now(ZoneInfo("America/New_York")).isoformat(timespec="minutes"),
+                   "login_expires": Y.login_expires(y.cookies),
                    "days_banked": len(played), "live_today": len(started)}
     json_path.write_text(json.dumps(d, ensure_ascii=False))
     log(f"done in {time.time() - t0:.0f}s")

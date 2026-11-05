@@ -378,6 +378,7 @@ def main() -> None:
         "this_week_vs": {"rows": vs, "me_by_stat": team_stats[Y.ME], "me_pts": live[Y.ME]},
         "rankings": rankings, "season": season_rows, "weekly_sd": round(float(sd), 1),
         "status": {"yahoo": "ok", "scraped_at": datetime.now(ZoneInfo("America/New_York")).isoformat(timespec="minutes"),
+                   "login_expires": Y.login_expires(y.cookies),
                    "live_today": len(L.skip_today)},
     }
     (OUT / "hockey.json").write_text(json.dumps(out, ensure_ascii=False, default=float))

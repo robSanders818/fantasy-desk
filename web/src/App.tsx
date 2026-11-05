@@ -192,11 +192,21 @@ function RefreshButton({ state, onClick }: { state: RefreshState; onClick: () =>
 }
 
 /** Warn when this sport's numbers are old: its last update failed, or the matchup is from a past week. */
-function StaleBanner({ d }: { d?: { status?: { scraped_at?: string; stale?: boolean; error?: string }; week?: { end: string } } }) {
+function StaleBanner({ d }: { d?: { status?: { scraped_at?: string; stale?: boolean; error?: string; login_expires?: string | null }; week?: { end: string } } }) {
   if (!d) return null;
   const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD, local time
   const pastWeek = !!d.week?.end && d.week.end < today;
-  if (!d.status?.stale && !pastWeek) return null;
+  const exp = d.status?.login_expires;
+  const daysLeft = exp ? Math.round((Date.parse(exp) - Date.parse(today)) / 86_400_000) : null;
+  if (!d.status?.stale && !pastWeek) {
+    if (daysLeft == null || daysLeft > 14) return null;
+    return (
+      <div className="mb-3 rounded-xl bg-warn/10 px-3.5 py-3 text-sm ring-1 ring-warn/30">
+        <div className="font-semibold text-warn">Saved Yahoo login expires in {Math.max(daysLeft, 0)} days</div>
+        <div className="mt-0.5 text-xs text-muted">On the Mac, run: uv run --group local yahoo_session.py (in FantasyDesk) to renew it.</div>
+      </div>
+    );
+  }
   const when = d.status?.scraped_at
     ? new Date(d.status.scraped_at).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" })
     : "an earlier update";
