@@ -35,7 +35,10 @@ scripts/encrypt.py         bundles every sport's JSON into web/public/data/desk.
 - **The user decides publishing actions:** creating repos and enabling Pages were blocked for Claude, and the user ran them.
 
 ## Failures
-- The Yahoo login expires after about 5 days: a saved session from 10/27 died 11/1. A dead login shows up as a redirect loop, and the scrapers raise SessionExpired for it.
+- **Yahoo login (fixed 2026-11-04):** the old "expires every ~5 days" was a bug. Cookies were saved as a flat name->value dict, so same-named per-site cookies (SPTB on each fantasy sub-site) clobbered each other, and the Fantasy site looped back to login.
+  - `yahoo_session.py` now saves only the main login cookies (`.yahoo.com` / `login.yahoo.com`, T/Y valid ~6 months) with domain, path and expiry. The scrapers build a domain-scoped jar (`cookie_jar()`), and the Fantasy session (SPT/SPTB) is re-issued on each run via the login.yahoo.com redirect.
+  - The page warns 14 days before `status.login_expires`.
+  - A dead login (redirect loop) raises SessionExpired.
 - A failed runner writes `pipeline/out/<sport>.error.json` (reason only). `encrypt.py --keep-previous` then republishes that sport's last data with `status.stale` + `status.error`, and the page shows a red banner. The page also shows the banner when the week shown has already ended.
 - The `check` job in update.yml fails the run (red X + email) if any sport failed.
 - Fix an expired login: `uv run --group local yahoo_session.py` (the user runs it), then tap Refresh.
