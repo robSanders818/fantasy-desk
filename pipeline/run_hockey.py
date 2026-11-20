@@ -95,7 +95,8 @@ def main() -> None:
 
     if a.local:
         import browser_cookie3
-        y = Y.Yahoo({c.name: c.value for c in browser_cookie3.brave(domain_name="yahoo.com")})
+        y = Y.Yahoo([{"name": c.name, "value": c.value, "domain": c.domain, "path": c.path or "/", "expires": c.expires,
+                    "secure": bool(c.secure)} for c in browser_cookie3.brave(domain_name="yahoo.com")])
     else:
         y = Y.Yahoo.from_env()
 
