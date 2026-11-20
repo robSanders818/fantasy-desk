@@ -71,6 +71,12 @@ def write_psv(path: Path, rows: list[dict], cols: list[str]) -> None:
             f.write("|".join(str(r.get(c, "")).replace("|", "/") for c in cols) + "\n")
 
 
+def off(saved: float, final: float) -> bool:
+    """Saved daily lineups that miss a week's final score by more than stat corrections explain
+    (those move a team a few points at most; a day saved mid-games is off by tens)."""
+    return abs(saved - final) > max(5.0, 0.02 * abs(final))
+
+
 def stat_points(stats: dict) -> dict:
     return {k: round(stats.get(k, 0.0) * w, 1) for k, w in WEIGHTS.items()}
 
@@ -146,7 +152,7 @@ def main() -> None:
                 if "pts_a" in g:
                     final[g["a"]], final[g["b"]] = g["pts_a"], g["pts_b"]
             saved = {t: sum(store["days"][k].get(str(t), {}).get("pts", 0.0) for k in keys) for t in final}
-            if any(abs(saved[t] - final[t]) > 0.5 for t in final):
+            if any(off(saved[t], final[t]) for t in final):
                 for k in keys:
                     store["days"].pop(k)
                 reset += 1
@@ -272,8 +278,7 @@ def main() -> None:
         ts, pp, n_days = week_detail(s_, e_)
         mp = pts_w[Y.ME]
         # stat/player detail only when every day is cached and adds up to the final score
-        full = n_days == (e_ - s_).days + 1 and all(
-            abs(sum(ts[t].values()) - pts_w[t]) <= 0.5 for t in (Y.ME, o))
+        full = n_days == (e_ - s_).days + 1 and not any(off(sum(ts[t].values()), pts_w[t]) for t in (Y.ME, o))
         rows = [{"team_id": t, "team": names.get(t, str(t)), "pts": p_, "opponent": t == o,
                  "result": "W" if mp > p_ else "L" if mp < p_ else "T", "by_stat": ts[t] if full else None}
                 for t, p_ in pts_w.items() if t != Y.ME]

@@ -58,6 +58,6 @@ scripts/encrypt.py         bundles every sport's JSON into web/public/data/desk.
 
 ## Week history and vs all (2026-11-20)
 - Matchup tab has a week picker: `history` in each sport's JSON holds every finished week, newest first. Basketball rebuilds it from the day cache (`records.history`). Hockey uses the scoreboard's final scores, plus stat and player detail from the cached daily lineups.
-- Hockey backfills earlier weeks' daily lineups 4 days per run (`--backfill`, 10 requests a day). A finished week whose saved days don't add up to the final score for every team is dropped and fetched again, because a day saved mid-games is short. Its detail shows only once it matches.
+- Hockey backfills earlier weeks' daily lineups 4 days per run (`--backfill`, 10 requests a day). A finished week whose saved days don't add up to the final score for every team is dropped and fetched again when it misses by more than 5 points or 2% (stat corrections move totals a few points; a day saved mid-games is off by tens). Its detail shows only once it matches.
 - Basketball tracks `final` days in its cache. A day saved before it ended is fetched again.
 - Rankings > Season: "vs All" = matchup record against every team every finished week (basketball: by categories won; hockey: by points). Basketball's old category all-play is now "Cat all-play".
