@@ -79,9 +79,7 @@ class Yahoo:
     def from_env(cls) -> "Yahoo":
         return cls(json.loads(os.environ["YAHOO_COOKIES"]))
 
-    def get(self, path: str) -> BeautifulSoup:
-        if self.requests_made:
-            time.sleep(PAUSE)
+    def _fetch(self, path: str) -> requests.Response:
         for attempt in range(3):                 # Yahoo occasionally stalls; retry timeouts / resets
             try:
                 r = self.s.get(f"{BASE}{path}", timeout=30)
@@ -93,6 +91,17 @@ class Yahoo:
                     raise
                 time.sleep(5 * (attempt + 1))
         self.requests_made += 1
+        return r
+
+    def get(self, path: str) -> BeautifulSoup:
+        if self.requests_made:
+            time.sleep(PAUSE)
+        # Since ~2026-11-08 the first request of a session sets the Fantasy session (SPT/SPTB) mid-redirect
+        # but still ends on login.yahoo.com/manage_account; asking again with those cookies works.
+        for login_try in range(2):
+            r = self._fetch(path)
+            if "login.yahoo.com" not in r.url:
+                break
         if r.status_code == 999:
             raise RuntimeError("Yahoo rate limit (999)")
         if "login.yahoo.com" in r.url:

@@ -41,6 +41,7 @@ scripts/encrypt.py         bundles every sport's JSON into web/public/data/desk.
   - A dead login (redirect loop) raises SessionExpired.
 - A failed runner writes `pipeline/out/<sport>.error.json` (reason only). `encrypt.py --keep-previous` then republishes that sport's last data with `status.stale` + `status.error`, and the page shows a red banner. The page also shows the banner when the week shown has already ended.
 - The `check` job in update.yml fails the run (red X + email) if any sport failed.
+- **Yahoo redirect change (fixed 2026-11-20):** since ~11-08 the first request of a run sets SPT/SPTB mid-redirect but ends on login.yahoo.com/manage_account, so every run reported "session expired" although the login was fine. `get()` now asks again once when it lands on login.yahoo.com. Before re-running yahoo_session.py, check whether the login really is dead: the login page returns manage_account (signed in) vs a username form (signed out).
 - Fix an expired login: `uv run --group local yahoo_session.py` (the user runs it), then tap Refresh.
 
 ## Sport notes
