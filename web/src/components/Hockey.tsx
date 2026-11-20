@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
-import type { HockeyLeague, HkPlayer } from "../types";
+import type { HockeyLeague, HkPlayer, HkWeekVs } from "../types";
 import type { BballTab } from "./Basketball";
-import { Badge, Card, Delta, ProbBar, SectionTitle, Sheet, StatusBadge, WinRing, pct, shortDay } from "./ui";
+import { Badge, Card, Delta, ProbBar, SectionTitle, Sheet, StatusBadge, WeekPicker, WinRing, pct, shortDay } from "./ui";
 
 const pts = (v: number | null | undefined, d = 1) => (v == null ? "–" : v.toFixed(d));
 const sgn = (v: number, d = 1) => `${v > 0 ? "+" : ""}${v.toFixed(d)}`;
@@ -35,7 +35,57 @@ function Who({ p, sub }: { p: HkPlayer; sub?: string }) {
 
 /* ---------------- Matchup ---------------- */
 
+/** Which week a view shows: the live current week, or a finished one from history. */
+type Period = { v: HkWeekVs; label: string; live: boolean };
+type Past = NonNullable<HockeyLeague["history"]>[number];
+
 function Matchup({ d }: { d: HockeyLeague }) {
+  const [wk, setWk] = useState<number | null>(null);
+  const past = d.history ?? [];
+  const h = past.find((x) => x.week === wk);
+  return (
+    <>
+      <WeekPicker current={d.week.number} past={past} value={h ? wk : null} onChange={setWk} />
+      {h ? <PastWeek d={d} h={h} /> : <CurrentWeek d={d} />}
+    </>
+  );
+}
+
+function PastWeek({ d, h }: { d: HockeyLeague; h: Past }) {
+  const tone = h.result === "W" ? "text-up" : h.result === "L" ? "text-down" : "text-warn";
+  const wins = h.rows.filter((r) => r.result === "W").length;
+  const them = h.rows.find((r) => r.opponent)?.by_stat;
+  return (
+    <>
+      <Card className="p-4">
+        <div className="text-xs text-muted">
+          Week {h.week} · {shortDay(h.start)} – {shortDay(h.end)} · final
+        </div>
+        <div className="mt-0.5 text-lg font-semibold leading-tight">vs {h.opponent}</div>
+        <div className="mt-3 flex items-baseline gap-3">
+          <span className={`text-4xl font-bold tabular-nums ${tone}`}>
+            {h.me_pts.toFixed(1)}–{h.opp_pts.toFixed(1)}
+          </span>
+          <span className={`text-sm font-semibold ${tone}`}>{h.result === "W" ? "Won" : h.result === "L" ? "Lost" : "Tied"}</span>
+        </div>
+        <div className="mt-2 text-xs text-muted">
+          vs every team that week: <span className="font-semibold tabular-nums text-fg">{wins}–{h.rows.length - wins}</span>
+        </div>
+      </Card>
+      {h.me_by_stat && them ? (
+        <StatBreakdown me={h.me_by_stat} them={them} themName={h.opponent} />
+      ) : (
+        <p className="px-1 pt-3 text-xs text-muted">
+          The stat-by-stat and player breakdown for this week is still being filled in, a few days per update.
+        </p>
+      )}
+      {h.player_pts && <PlayerPoints data={h.player_pts} label={`Player points, week ${h.week}`} />}
+      <VsEveryTeam period={{ v: h, label: `Week ${h.week}`, live: false }} />
+    </>
+  );
+}
+
+function CurrentWeek({ d }: { d: HockeyLeague }) {
   const lead = d.live.me - d.live.opp;
   return (
     <>
@@ -82,8 +132,8 @@ function Matchup({ d }: { d: HockeyLeague }) {
 
       <TodayLineup d={d} />
       <StatBreakdown me={d.by_stat.me} them={d.by_stat.opp} themName={d.opponent} />
-      <PlayerPoints d={d} />
-      <VsEveryTeam d={d} />
+      <PlayerPoints data={d.player_pts} label="Player points this week" />
+      <VsEveryTeam period={{ v: d.this_week_vs, label: "This week", live: true }} />
     </>
   );
 }
@@ -190,9 +240,9 @@ function StatBreakdown({ me, them, themName }: { me: Record<string, number>; the
   );
 }
 
-function PlayerPoints({ d }: { d: HockeyLeague }) {
+function PlayerPoints({ data, label }: { data: HockeyLeague["player_pts"]; label: string }) {
   const [side, setSide] = useState<"me" | "opp">("me");
-  const rows = d.player_pts[side].filter((r) => r.pts || r.bench_pts);
+  const rows = data[side].filter((r) => r.pts || r.bench_pts);
   return (
     <>
       <SectionTitle
@@ -206,7 +256,7 @@ function PlayerPoints({ d }: { d: HockeyLeague }) {
           </div>
         }
       >
-        Player points this week
+        {label}
       </SectionTitle>
       <Card className="divide-y divide-line">
         {rows.length === 0 && <div className="px-4 py-3 text-sm text-muted">No points yet this week.</div>}
@@ -222,8 +272,8 @@ function PlayerPoints({ d }: { d: HockeyLeague }) {
   );
 }
 
-function VsEveryTeam({ d }: { d: HockeyLeague }) {
-  const v = d.this_week_vs;
+function VsEveryTeam({ period }: { period: Period }) {
+  const v = period.v;
   const [open, setOpen] = useState<number | null>(null);
   const sel = v.rows.find((r) => r.team_id === open);
   const wins = v.rows.filter((r) => r.result === "W").length;
@@ -233,17 +283,21 @@ function VsEveryTeam({ d }: { d: HockeyLeague }) {
         <Sheet onClose={() => setOpen(null)}>
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <div className="text-xs text-muted">This week so far (live)</div>
+              <div className="text-xs text-muted">{period.live ? "This week so far (live)" : `${period.label} final`}</div>
               <h3 className="mt-0.5 truncate text-lg font-semibold">You vs {sel.team}</h3>
             </div>
             <div className={`shrink-0 text-2xl font-bold tabular-nums ${sel.result === "W" ? "text-up" : sel.result === "L" ? "text-down" : "text-warn"}`}>
               {v.me_pts.toFixed(1)}–{sel.pts.toFixed(1)}
             </div>
           </div>
-          <StatBreakdown me={v.me_by_stat} them={sel.by_stat} themName={sel.team} />
+          {v.me_by_stat && sel.by_stat ? (
+            <StatBreakdown me={v.me_by_stat} them={sel.by_stat} themName={sel.team} />
+          ) : (
+            <p className="mt-3 text-xs text-muted">Stat-by-stat detail for this week isn't cached yet.</p>
+          )}
         </Sheet>
       )}
-      <SectionTitle aside={<span>total <b className="tabular-nums text-fg">{wins}–{v.rows.length - wins}</b></span>}>This week vs every team</SectionTitle>
+      <SectionTitle aside={<span>total <b className="tabular-nums text-fg">{wins}–{v.rows.length - wins}</b></span>}>{period.label} vs every team</SectionTitle>
       <Card className="divide-y divide-line">
         {v.rows.map((r) => (
           <button key={r.team_id} onClick={() => setOpen(r.team_id)} className="flex w-full items-center gap-3 px-4 py-2.5 text-left active:bg-line/40">
@@ -257,7 +311,10 @@ function VsEveryTeam({ d }: { d: HockeyLeague }) {
           </button>
         ))}
       </Card>
-      <p className="px-1 pt-2 text-xs text-muted">Your {v.me_pts.toFixed(1)} so far vs each team's this week. Tap a team for the stat-by-stat comparison.</p>
+      <p className="px-1 pt-2 text-xs text-muted">
+        Your {v.me_pts.toFixed(1)} {period.live ? "so far vs each team's this week" : `vs each team's ${period.label.toLowerCase()} final`}. Tap a team for
+        the stat-by-stat comparison.
+      </p>
     </>
   );
 }
@@ -507,6 +564,23 @@ function Season({ d }: { d: HockeyLeague }) {
   return (
     <>
       <div className="px-1 pb-2 pt-1 text-xs text-muted">Finished weeks only. Tap a column to sort.</div>
+      {(() => {
+        const mine = d.season.find((r) => r.team_id === d.my_team_id);
+        if (!mine || !mine.allplay.some(Boolean)) return null;
+        const place = [...d.season].sort((a, b) => b.allplay_pct - a.allplay_pct).findIndex((r) => r.team_id === d.my_team_id) + 1;
+        return (
+          <Card className="mb-3 flex items-center justify-between gap-3 px-4 py-3">
+            <div>
+              <div className="text-xs text-muted">Your record vs all</div>
+              <div className="text-xl font-bold tabular-nums">{rec(mine.allplay)}</div>
+            </div>
+            <div className="text-right">
+              <div className="text-xl font-bold tabular-nums text-accent">{pct(mine.allplay_pct)}</div>
+              <div className="text-xs text-muted">{place} of {d.season.length}</div>
+            </div>
+          </Card>
+        );
+      })()}
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-xs tabular-nums">
@@ -516,7 +590,7 @@ function Season({ d }: { d: HockeyLeague }) {
                 {head("record", "W-L")}
                 {head("pf", "PF")}
                 {head("pa", "PA")}
-                {head("allplay_pct", "All-play")}
+                {head("allplay_pct", "vs All")}
                 {head("luck", "Luck")}
               </tr>
             </thead>
@@ -542,7 +616,7 @@ function Season({ d }: { d: HockeyLeague }) {
         </div>
       </Card>
       <p className="px-1 pt-2 text-xs text-muted">
-        All-play = record if you'd played every team every week. Luck = actual wins minus the wins your all-play rate would
+        vs All = your record if you'd played every team every week. Luck = actual wins minus the wins your all-play rate would
         have earned: positive means your opponents happened to score less.
       </p>
     </>

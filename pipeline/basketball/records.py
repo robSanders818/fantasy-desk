@@ -68,22 +68,54 @@ def this_week(week_tot: dict[int, list[float]], me: int, opp: int, names: dict[i
     return {"rows": rows, "total": total, "me": shown(week_tot[me])}
 
 
+def week_range(w: int, today: date) -> tuple[date, date]:
+    start = SEASON_START if w == 1 else WEEK2_START + timedelta(days=7 * (w - 2))
+    end = min(WEEK2_START - timedelta(days=1) if w == 1 else start + timedelta(days=6), today)
+    return start, end
+
+
+def result(r: list[int]) -> int:
+    """Index into [W, L, T] for a category record (one-win H2H: most categories wins the week)."""
+    return 0 if r[0] > r[1] else 1 if r[1] > r[0] else 2
+
+
+def history(days: dict, pairs: dict, today: date, names: dict[int, str], me: int) -> list[dict]:
+    """Each finished week, newest first: final categories for you, your opponent and every team
+    (same shape as this_week, so the page reuses its views)."""
+    teams = sorted(names)
+    out = []
+    for w in range(1, week_of(today)):
+        start, end = week_range(w, today)
+        opp = next((b if a == me else a for a, b in pairs.get(str(w), []) if me in (a, b)), None)
+        if opp is None:
+            continue
+        tot = period_totals(days, start, end, teams)
+        v = this_week(tot, me, opp, names)
+        mine = next(r["record"] for r in v["rows"] if r["opponent"])
+        out.append({"week": w, "start": start.isoformat(), "end": end.isoformat(), "opp_id": opp,
+                    "opponent": names.get(opp, str(opp)), "record": mine, "result": "WLT"[result(mine)], **v})
+    return out[::-1]
+
+
 def season(days: dict, pairs: dict, today: date, names: dict[int, str]) -> dict:
     """Season so far (through today, live): category record vs actual opponents, all-play
     record, matchup W-L-T, and category totals."""
     teams = sorted(names)
-    acc = {t: {"cat": [0, 0, 0], "allplay": [0, 0, 0], "matchups": [0, 0, 0], "tot": [0.0] * 11} for t in teams}
+    acc = {t: {"cat": [0, 0, 0], "allplay": [0, 0, 0], "matchups": [0, 0, 0], "vs_all": [0, 0, 0], "tot": [0.0] * 11}
+           for t in teams}
     weeks = []
     for w in range(1, week_of(today) + 1):
-        start = SEASON_START if w == 1 else WEEK2_START + timedelta(days=7 * (w - 2))
-        end = min(WEEK2_START - timedelta(days=1) if w == 1 else start + timedelta(days=6), today)
+        start, end = week_range(w, today)
         tot = period_totals(days, start, end, teams)
         finished = end < today
         for t in teams:
             acc[t]["tot"] = add(acc[t]["tot"], tot[t])
             for o in teams:
                 if o != t:
-                    acc[t]["allplay"] = [x + y for x, y in zip(acc[t]["allplay"], compare(tot[t], tot[o]))]
+                    r = compare(tot[t], tot[o])
+                    acc[t]["allplay"] = [x + y for x, y in zip(acc[t]["allplay"], r)]
+                    if finished:   # vs all: the matchup result against every team, finished weeks
+                        acc[t]["vs_all"][result(r)] += 1
         for a, b in pairs.get(str(w), []):
             if a not in tot or b not in tot:
                 continue
@@ -91,7 +123,7 @@ def season(days: dict, pairs: dict, today: date, names: dict[int, str]) -> dict:
             acc[a]["cat"] = [x + y for x, y in zip(acc[a]["cat"], ra)]
             acc[b]["cat"] = [x + y for x, y in zip(acc[b]["cat"], [ra[1], ra[0], ra[2]])]
             if finished:   # a matchup only counts in W-L-T once its week is over
-                res = 0 if ra[0] > ra[1] else 1 if ra[1] > ra[0] else 2
+                res = result(ra)
                 acc[a]["matchups"][res] += 1
                 acc[b]["matchups"][[1, 0, 2][res]] += 1
         weeks.append({"week": w, "start": start.isoformat(), "end": end.isoformat(), "finished": finished})
@@ -99,7 +131,7 @@ def season(days: dict, pairs: dict, today: date, names: dict[int, str]) -> dict:
     for t in teams:
         c = cats(acc[t]["tot"])
         rows.append({"team_id": t, "team": names[t], "cat_record": acc[t]["cat"], "allplay": acc[t]["allplay"],
-                     "matchups": acc[t]["matchups"],
+                     "matchups": acc[t]["matchups"], "vs_all": acc[t]["vs_all"],
                      "totals": {k: round(v, 4) if "%" in k else round(v) for k, v in c.items()}})
     rows.sort(key=lambda r: -(r["allplay"][0] + r["allplay"][2] / 2) / max(sum(r["allplay"]), 1))
     return {"weeks": weeks, "rows": rows}

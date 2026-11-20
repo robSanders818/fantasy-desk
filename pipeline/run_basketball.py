@@ -86,16 +86,22 @@ def main() -> None:
         # Daily active-lineup totals for every team: cached finished days, refetching yesterday
         # (stat corrections) and filling gaps a few days per run; today is always live.
         store = C.load("basketball")
+        # A day only counts as final once it was saved after it ended; one saved while its games were
+        # going (e.g. the last run before an outage) is fetched again. Days cached before this rule
+        # existed count as final.
+        final = set(store.setdefault("final", sorted(store["days"])))
         need, d = [], R.SEASON_START
         while d < today:
             have = store["days"].get(d.isoformat(), {})
-            if len(have) < len(teams) or d == today - timedelta(days=1):
+            if len(have) < len(teams) or d == today - timedelta(days=1) or d.isoformat() not in final:
                 need.append(d)
             d += timedelta(days=1)
         yesterday_only = [x for x in need if x == today - timedelta(days=1)]
         gaps = [x for x in need if x not in yesterday_only][-a.backfill:] if a.backfill else []
         for d in sorted(set(gaps + yesterday_only)):
             store["days"][d.isoformat()] = {str(t): Y.day_totals(y, t, d)[0] for t in teams}
+            final.add(d.isoformat())             # d < today: its games are over
+        store["final"] = sorted(final)
         today_tot, started_by = {}, {}
         my_games = {}
         for t in teams:
@@ -189,6 +195,7 @@ def main() -> None:
     d = json.loads(json_path.read_text())
     d["this_week_vs"] = R.this_week(week_tot, Y.ME, opp, names)
     d["season"] = R.season(live_days, store["pairs"], today, names)
+    d["history"] = R.history(store["days"], store["pairs"], today, names, Y.ME)
     d["rankings"] = json.loads(rank_path.read_text()) if rank_path.exists() and r.returncode == 0 else []
     d["my_team_id"] = Y.ME
     lu = d.get("lineup_today")

@@ -204,3 +204,30 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { failed: 
     );
   }
 }
+
+/** Week chips for the Matchup tab: the current week on the left, then finished weeks going back. */
+export function WeekPicker({ current, past, value, onChange }: {
+  current: number | undefined; past: { week: number; result?: string }[]; value: number | null; onChange: (w: number | null) => void;
+}) {
+  if (!past.length) return null;
+  const chip = (key: string, active: boolean, label: ReactNode, onClick: () => void) => (
+    <button key={key} onClick={onClick}
+      className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium tabular-nums ${active ? "bg-fg text-bg" : "bg-line/60 text-muted"}`}>
+      {label}
+    </button>
+  );
+  const tone = (r?: string) => (r === "W" ? "text-up" : r === "L" ? "text-down" : "text-warn");
+  return (
+    <div className="-mx-4 mb-3 flex gap-1.5 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none]">
+      {chip("now", value == null, current ? `Wk ${current} · now` : "Now", () => onChange(null))}
+      {past.map((p) =>
+        chip(String(p.week), value === p.week, (
+          <>
+            Wk {p.week}
+            {p.result && <span className={`ml-1 font-bold ${value === p.week ? "" : tone(p.result)}`}>{p.result}</span>}
+          </>
+        ), () => onChange(p.week)),
+      )}
+    </div>
+  );
+}

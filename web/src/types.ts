@@ -97,15 +97,19 @@ export interface CategoryLeague {
     open_slots: string[];
     changes: string[];
   } | null;
-  this_week_vs?: {
-    rows: { team_id: number; team: string; record: number[]; opponent: boolean; cats?: CatMap }[];
-    total: number[];
-    me?: CatMap;
-  };
+  this_week_vs?: WeekVs;
+  /** Finished weeks, newest first. */
+  history?: (WeekVs & { week: number; start: string; end: string; opp_id: number; opponent: string; record: number[]; result: "W" | "L" | "T" })[];
   season?: {
     weeks: { week: number; start: string; end: string; finished: boolean }[];
     rows: SeasonRow[];
   };
+}
+
+export interface WeekVs {
+  rows: { team_id: number; team: string; record: number[]; opponent: boolean; cats?: CatMap }[];
+  total: number[];
+  me?: CatMap;
 }
 
 export interface SeasonRow {
@@ -114,6 +118,7 @@ export interface SeasonRow {
   cat_record: number[]; // [W, L, T] categories vs actual opponents
   allplay: number[]; // [W, L, T] categories vs every team, every week
   matchups: number[]; // [W, L, T] finished weeks
+  vs_all?: number[]; // [W, L, T] matchup results vs every team, every finished week
   totals: CatMap;
 }
 
@@ -134,6 +139,12 @@ export interface HkPlan {
   games: { before: number; after: number; goalies_before: number; goalies_after: number };
   points: { before: number; after: number };
   p_win: number | null;
+}
+
+export interface HkWeekVs {
+  rows: { team_id: number; team: string; pts: number; opponent: boolean; result: string; by_stat: Record<string, number> | null }[];
+  me_by_stat: Record<string, number> | null;
+  me_pts: number;
 }
 
 export interface HockeyLeague {
@@ -164,7 +175,12 @@ export interface HockeyLeague {
   free_agents: (HkPlayer & { exp_fp: number; day: string; drop: HkPlayer; week_pts: number; total: number; games: number; games_added: number; avail: string })[];
   roster: (HkPlayer & { slot: string; exp_fp: number; p_play: number; keep_value: number; rotatable: boolean; games_left: number; goalie: boolean; week_pts: number })[];
   replacement: Record<string, number>;
-  this_week_vs: { rows: { team_id: number; team: string; pts: number; opponent: boolean; result: string; by_stat: Record<string, number> }[]; me_by_stat: Record<string, number>; me_pts: number };
+  this_week_vs: HkWeekVs;
+  /** Finished weeks, newest first. by_stat / player_pts are null until every day of that week is cached. */
+  history?: (HkWeekVs & {
+    week: number; start: string; end: string; opp_id: number; opponent: string; opp_pts: number; result: string;
+    player_pts: HockeyLeague["player_pts"] | null;
+  })[];
   rankings: { rank: number; team_id: number; team: string; proj_week: number; win_pct: number }[];
   season: {
     team_id: number; team: string; record: number[]; pf: number; pa: number; allplay: number[]; allplay_pct: number;

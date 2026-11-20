@@ -80,6 +80,8 @@ def main() -> None:
     ap.add_argument("--local", action="store_true")
     ap.add_argument("--today")
     ap.add_argument("--skip-nhl", action="store_true", help="reuse the NHL files already on disk")
+    ap.add_argument("--backfill", type=int, default=4,
+                    help="past days (10 requests each) of daily lineups to fill in per run, newest first; big locally")
     a = ap.parse_args()
     t0 = time.time()
     (OUT / "hockey.error.json").unlink(missing_ok=True)
@@ -130,6 +132,31 @@ def main() -> None:
             if key not in store["days"] or d >= today - timedelta(days=1):
                 store["days"][key] = {str(t): Y.day(y, t, d) for t in Y.TEAM_IDS}
             d += timedelta(days=1)
+        # earlier weeks' daily lineups (for the week-by-week history), a few days per run. A day saved
+        # while its games were still going can be short, so a finished week whose saved days don't add
+        # up to the scoreboard's final score for every team is dropped and fetched again.
+        reset = 0
+        for w in range(1, week_no):
+            s_, e_ = week_bounds(w)
+            keys = [(s_ + timedelta(days=i)).isoformat() for i in range((e_ - s_).days + 1)]
+            if not all(k in store["days"] for k in keys):
+                continue
+            final = {}
+            for g in store["weeks"].get(str(w), []):
+                if "pts_a" in g:
+                    final[g["a"]], final[g["b"]] = g["pts_a"], g["pts_b"]
+            saved = {t: sum(store["days"][k].get(str(t), {}).get("pts", 0.0) for k in keys) for t in final}
+            if any(abs(saved[t] - final[t]) > 0.5 for t in final):
+                for k in keys:
+                    store["days"].pop(k)
+                reset += 1
+        missing = [WEEK1_START + timedelta(days=i) for i in range((wk_start - WEEK1_START).days)]
+        missing = [x for x in missing if x.isoformat() not in store["days"]][::-1][:a.backfill]
+        for d in missing:
+            store["days"][d.isoformat()] = {str(t): Y.day(y, t, d) for t in Y.TEAM_IDS}
+        left = sum(1 for i in range((wk_start - WEEK1_START).days)
+                   if (WEEK1_START + timedelta(days=i)).isoformat() not in store["days"])
+        log(f"history: filled {len(missing)} past day(s); {left} still missing; {reset} week(s) re-queued")
         adds_used = Y.adds_this_week(y, wk_start, SEASON_YEAR)
     except Y.SessionExpired:
         log("Yahoo session expired -- re-run yahoo_session.py")
@@ -196,34 +223,66 @@ def main() -> None:
     V = plan["V"] if plan else pd.Series(0.0, index=pl.index)
 
     # ---------- week so far: points by player and by stat ----------
-    week_days = [k for k in sorted(store["days"]) if wk_start.isoformat() <= k <= today.isoformat()]
-    team_stats, player_pts = {}, {}
-    for t in Y.TEAM_IDS:
-        tot = {k: 0.0 for k in WEIGHTS}
-        pp = {}
-        for k in week_days:
-            day = store["days"][k].get(str(t))
-            if not day:
-                continue
-            for s_, v in day["stats"].items():
-                tot[s_] = tot.get(s_, 0.0) + v
-            for yid, (nm, fp, act, slot) in day["players"].items():
-                e = pp.setdefault(yid, {"name": nm, "pts": 0.0, "bench_pts": 0.0, "games": 0})
-                if act:
-                    e["pts"] += fp
-                elif fp:
-                    e["bench_pts"] += fp
-                if fp:
-                    e["games"] += 1
-        team_stats[t] = stat_points(tot)
-        player_pts[t] = sorted(({**v, "pts": round(v["pts"], 1), "bench_pts": round(v["bench_pts"], 1)}
-                                for v in pp.values()), key=lambda r: -r["pts"])
+    def week_detail(start: date, end: date) -> tuple[dict, dict, int]:
+        """Fantasy points by stat and by player for every team over [start, end], from the cached
+        daily lineups; also how many of those days are cached."""
+        keys = [k for k in sorted(store["days"]) if start.isoformat() <= k <= end.isoformat()]
+        team_stats, player_pts = {}, {}
+        for t in Y.TEAM_IDS:
+            tot = {k: 0.0 for k in WEIGHTS}
+            pp = {}
+            for k in keys:
+                day = store["days"][k].get(str(t))
+                if not day:
+                    continue
+                for s_, v in day["stats"].items():
+                    tot[s_] = tot.get(s_, 0.0) + v
+                for yid, (nm, fp, act, slot) in day["players"].items():
+                    e = pp.setdefault(yid, {"name": nm, "pts": 0.0, "bench_pts": 0.0, "games": 0})
+                    if act:
+                        e["pts"] += fp
+                    elif fp:
+                        e["bench_pts"] += fp
+                    if fp:
+                        e["games"] += 1
+            team_stats[t] = stat_points(tot)
+            player_pts[t] = sorted(({**v, "pts": round(v["pts"], 1), "bench_pts": round(v["bench_pts"], 1)}
+                                    for v in pp.values()), key=lambda r: -r["pts"])
+        return team_stats, player_pts, len(keys)
+
+    team_stats, player_pts, _ = week_detail(wk_start, today)
 
     # ---------- this week vs every team; season; luck; playoff odds ----------
     vs = [{"team_id": t, "team": names.get(t, str(t)), "pts": live.get(t, 0.0), "opponent": t == opp,
            "result": "W" if live[Y.ME] > live.get(t, 0) else "L" if live[Y.ME] < live.get(t, 0) else "T",
            "by_stat": team_stats[t]} for t in Y.TEAM_IDS if t != Y.ME]
     vs.sort(key=lambda r: (-r["opponent"], r["pts"]))
+
+    # ---------- finished weeks, newest first (Matchup tab's week picker) ----------
+    history = []
+    for w in range(week_no - 1, 0, -1):
+        gs = [g for g in store["weeks"].get(str(w), []) if "pts_a" in g]
+        pts_w = {}
+        for g in gs:
+            pts_w[g["a"]], pts_w[g["b"]] = g["pts_a"], g["pts_b"]
+        o = next((g["b"] if g["a"] == Y.ME else g["a"] for g in gs if Y.ME in (g["a"], g["b"])), None)
+        if o is None or Y.ME not in pts_w:
+            continue
+        s_, e_ = week_bounds(w)
+        ts, pp, n_days = week_detail(s_, e_)
+        mp = pts_w[Y.ME]
+        # stat/player detail only when every day is cached and adds up to the final score
+        full = n_days == (e_ - s_).days + 1 and all(
+            abs(sum(ts[t].values()) - pts_w[t]) <= 0.5 for t in (Y.ME, o))
+        rows = [{"team_id": t, "team": names.get(t, str(t)), "pts": p_, "opponent": t == o,
+                 "result": "W" if mp > p_ else "L" if mp < p_ else "T", "by_stat": ts[t] if full else None}
+                for t, p_ in pts_w.items() if t != Y.ME]
+        rows.sort(key=lambda r: (-r["opponent"], r["pts"]))
+        history.append({"week": w, "start": s_.isoformat(), "end": e_.isoformat(), "opp_id": o,
+                        "opponent": names.get(o, str(o)), "me_pts": mp, "opp_pts": pts_w[o],
+                        "result": rows[0]["result"], "rows": rows,
+                        "me_by_stat": ts[Y.ME] if full else None,
+                        "player_pts": {"me": pp[Y.ME], "opp": pp[o]} if full else None})
 
     rank_df, sd = L.rank()
     mu = dict(zip(rank_df["id"], rank_df["proj_week"]))
@@ -377,7 +436,7 @@ def main() -> None:
         "plan": steps, "plans": plans, "free_agents": singles, "roster": roster,
         "replacement": {k: round(float(v), 2) for k, v in plan["repl"].items()} if plan else {},
         "this_week_vs": {"rows": vs, "me_by_stat": team_stats[Y.ME], "me_pts": live[Y.ME]},
-        "rankings": rankings, "season": season_rows, "weekly_sd": round(float(sd), 1),
+        "history": history, "rankings": rankings, "season": season_rows, "weekly_sd": round(float(sd), 1),
         "status": {"yahoo": "ok", "scraped_at": datetime.now(ZoneInfo("America/New_York")).isoformat(timespec="minutes"),
                    "login_expires": Y.login_expires(y.cookies),
                    "live_today": len(L.skip_today)},

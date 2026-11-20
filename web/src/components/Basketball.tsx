@@ -1,11 +1,15 @@
 import { useMemo, useState } from "react";
-import type { CategoryLeague, FreeAgent, LineupPlayer, RankRow, SeasonRow } from "../types";
-import { Badge, Card, Delta, ProbBar, SectionTitle, Sheet, StatusBadge, WinRing, pct, shortDay, signed, signedPts } from "./ui";
+import type { CategoryLeague, FreeAgent, LineupPlayer, RankRow, SeasonRow, WeekVs } from "../types";
+import { Badge, Card, Delta, ProbBar, SectionTitle, Sheet, StatusBadge, WeekPicker, WinRing, pct, shortDay, signed, signedPts } from "./ui";
 
 const fmtCat = (c: string, v: number | undefined) =>
   v == null ? "–" : c.includes("%") ? v.toFixed(3).replace(/^0/, "") : Math.round(v).toString();
 
 export type BballTab = "matchup" | "moves" | "roster" | "league";
+
+/** Which week a view shows: the live current week, or a finished one from history. */
+type Period = { v: WeekVs | undefined; label: string; live: boolean };
+const liveWeek = (d: CategoryLeague): Period => ({ v: d.this_week_vs, label: "This week", live: true });
 
 export function Basketball({ d, tab }: { d: CategoryLeague; tab: BballTab }) {
   if (tab === "moves")
@@ -42,6 +46,64 @@ function Alerts({ d }: { d: CategoryLeague }) {
 }
 
 function Matchup({ d }: { d: CategoryLeague }) {
+  const [wk, setWk] = useState<number | null>(null);
+  const past = d.history ?? [];
+  const h = past.find((x) => x.week === wk);
+  return (
+    <>
+      <WeekPicker current={d.week.number} past={past} value={h ? wk : null} onChange={setWk} />
+      {h ? <PastWeek d={d} h={h} /> : <CurrentWeek d={d} />}
+    </>
+  );
+}
+
+function PastWeek({ d, h }: { d: CategoryLeague; h: NonNullable<CategoryLeague["history"]>[number] }) {
+  const period: Period = { v: h, label: `Week ${h.week}`, live: false };
+  const tone = h.result === "W" ? "text-up" : h.result === "L" ? "text-down" : "text-warn";
+  const me = h.me ?? {}, them = h.rows.find((r) => r.opponent)?.cats ?? {};
+  return (
+    <>
+      <Card className="p-4">
+        <div className="text-xs text-muted">
+          Week {h.week} · {shortDay(h.start)} – {shortDay(h.end)} · final
+        </div>
+        <div className="mt-0.5 text-lg font-semibold leading-tight">vs {h.opponent}</div>
+        <div className="mt-3 flex items-baseline gap-3">
+          <span className={`text-4xl font-bold tabular-nums ${tone}`}>{rec(h.record)}</span>
+          <span className={`text-sm font-semibold ${tone}`}>{h.result === "W" ? "Won" : h.result === "L" ? "Lost" : "Tied"}</span>
+        </div>
+        <div className="mt-2 text-xs text-muted">
+          vs every team that week: <span className="font-semibold text-fg tabular-nums">{rec(h.total)}</span> in categories
+        </div>
+      </Card>
+
+      <SectionTitle aside="final">Categories</SectionTitle>
+      <Card className="divide-y divide-line">
+        {d.cats.map((c) => {
+          const punt = d.punt.includes(c);
+          const low = d.lower_is_better.includes(c);
+          const a = me[c], b = them[c];
+          const win = a == null || b == null || Math.abs(a - b) < 1e-9 ? 0 : (low ? a < b : a > b) ? 1 : -1;
+          return (
+            <div key={c} className={`grid grid-cols-[3.25rem_1fr_auto_1fr] items-center gap-2 px-4 py-2.5 tabular-nums ${punt ? "opacity-55" : ""}`}>
+              <div className="text-sm font-semibold">
+                {c}
+                {punt && <div className="text-[10px] font-normal uppercase tracking-wide text-muted">punt</div>}
+              </div>
+              <div className={`text-right text-sm ${win === 1 ? "font-bold text-up" : ""}`}>{fmtCat(c, a)}</div>
+              <span className="text-xs text-muted">v</span>
+              <div className={`text-sm ${win === -1 ? "font-bold text-down" : ""}`}>{fmtCat(c, b)}</div>
+            </div>
+          );
+        })}
+      </Card>
+      <VsEveryTeam d={d} period={period} />
+      <CategoryRanks d={d} period={period} />
+    </>
+  );
+}
+
+function CurrentWeek({ d }: { d: CategoryLeague }) {
   const lead = d.banked.me
     ? d.cats.reduce(
         (acc, c) => {
@@ -118,8 +180,8 @@ function Matchup({ d }: { d: CategoryLeague }) {
       <p className="px-1 pt-2 text-xs text-muted">
         Projected = week-to-date stats plus a simulation of the remaining days with daily lineups.
       </p>
-      <VsEveryTeam d={d} />
-      <CategoryRanks d={d} />
+      <VsEveryTeam d={d} period={liveWeek(d)} />
+      <CategoryRanks d={d} period={liveWeek(d)} />
     </>
   );
 }
@@ -129,12 +191,12 @@ const rec = (r: number[]) => `${r[0]}–${r[1]}${r[2] ? `–${r[2]}` : ""}`;
 type Pt = { team_id: number; team: string; v: number; me: boolean; opp: boolean };
 
 /** Every team's value per category, this week (live) or season totals. */
-function categoryPoints(d: CategoryLeague, view: "week" | "season"): Record<string, Pt[]> | null {
+function categoryPoints(d: CategoryLeague, view: "week" | "season", week: WeekVs | undefined = d.this_week_vs): Record<string, Pt[]> | null {
   const me = d.my_team_id;
-  const oppId = d.this_week_vs?.rows.find((r) => r.opponent)?.team_id;
+  const oppId = week?.rows.find((r) => r.opponent)?.team_id;
   const teams: { team_id: number; team: string; cats: Record<string, number> }[] = [];
   if (view === "week") {
-    const v = d.this_week_vs;
+    const v = week;
     if (!v?.me || v.rows.some((r) => !r.cats)) return null;
     teams.push({ team_id: me ?? -1, team: d.team, cats: v.me });
     v.rows.forEach((r) => teams.push({ team_id: r.team_id, team: r.team, cats: r.cats! }));
@@ -157,10 +219,10 @@ const ordinalShort = (n: number) => {
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 };
 
-function CategoryRanks({ d }: { d: CategoryLeague }) {
+function CategoryRanks({ d, period }: { d: CategoryLeague; period: Period }) {
   const [view, setView] = useState<"week" | "season">("week");
   const [open, setOpen] = useState<string | null>(null);
-  const data = categoryPoints(d, view) ?? categoryPoints(d, "season");
+  const data = categoryPoints(d, view, period.v) ?? categoryPoints(d, "season");
   if (!data) return null;
   const n = data[d.cats[0]].length;
   const rankOf = (c: string) => data[c].findIndex((p) => p.me) + 1;
@@ -169,7 +231,7 @@ function CategoryRanks({ d }: { d: CategoryLeague }) {
     <>
       {open && (
         <Sheet onClose={() => setOpen(null)}>
-          <CategorySheet d={d} c={open} pts={data[open]} view={view} />
+          <CategorySheet d={d} c={open} pts={data[open]} view={view} period={period} />
         </Sheet>
       )}
       <SectionTitle
@@ -177,7 +239,7 @@ function CategoryRanks({ d }: { d: CategoryLeague }) {
           <div className="flex rounded-lg bg-line/60 p-0.5 text-xs font-medium">
             {(
               [
-                ["week", "This week"],
+                ["week", period.label],
                 ["season", "Season"],
               ] as const
             ).map(([k, label]) => (
@@ -238,20 +300,20 @@ function CategoryRanks({ d }: { d: CategoryLeague }) {
       </Card>
       <p className="px-1 pt-2 text-xs text-muted">
         Average rank in your categories: <span className="font-semibold text-fg">{avg.toFixed(1)}</span> of {n}
-        {view === "week" ? " (live this week)" : " (season totals)"}. Punted categories are dimmed. Tap a category for the full list.
+        {view === "week" ? (period.live ? " (live this week)" : ` (${period.label.toLowerCase()}, final)`) : " (season totals)"}. Punted categories are dimmed. Tap a category for the full list.
       </p>
     </>
   );
 }
 
-function CategorySheet({ d, c, pts, view }: { d: CategoryLeague; c: string; pts: Pt[]; view: "week" | "season" }) {
+function CategorySheet({ d, c, pts, view, period }: { d: CategoryLeague; c: string; pts: Pt[]; view: "week" | "season"; period: Period }) {
   const low = d.lower_is_better.includes(c);
   const vals = pts.map((p) => p.v);
   const lo = Math.min(...vals), hi = Math.max(...vals);
   const frac = (v: number) => (hi === lo ? 1 : 0.15 + 0.85 * (low ? (hi - v) / (hi - lo) : (v - lo) / (hi - lo)));
   return (
     <>
-      <div className="text-xs text-muted">{view === "week" ? "This week so far (live)" : "Season totals"}{low ? " · lower is better" : ""}</div>
+      <div className="text-xs text-muted">{view === "week" ? (period.live ? "This week so far (live)" : `${period.label} final`) : "Season totals"}{low ? " · lower is better" : ""}</div>
       <h3 className="mt-0.5 text-lg font-semibold">{c} ranking</h3>
       <div className="mt-3 space-y-1.5">
         {pts.map((p, i) => (
@@ -269,8 +331,8 @@ function CategorySheet({ d, c, pts, view }: { d: CategoryLeague; c: string; pts:
   );
 }
 
-function VsEveryTeam({ d }: { d: CategoryLeague }) {
-  const v = d.this_week_vs;
+function VsEveryTeam({ d, period }: { d: CategoryLeague; period: Period }) {
+  const v = period.v;
   const [open, setOpen] = useState<number | null>(null);
   if (!v?.rows.length) return null;
   const sel = v.rows.find((r) => r.team_id === open);
@@ -278,10 +340,10 @@ function VsEveryTeam({ d }: { d: CategoryLeague }) {
     <>
       {sel && v.me && sel.cats && (
         <Sheet onClose={() => setOpen(null)}>
-          <HeadToHead d={d} me={v.me} them={sel.cats} team={sel.team} record={sel.record} opponent={sel.opponent} />
+          <HeadToHead d={d} me={v.me} them={sel.cats} team={sel.team} record={sel.record} opponent={sel.opponent} period={period} />
         </Sheet>
       )}
-      <SectionTitle aside={<span>total <b className="text-fg tabular-nums">{rec(v.total)}</b></span>}>This week vs every team</SectionTitle>
+      <SectionTitle aside={<span>total <b className="text-fg tabular-nums">{rec(v.total)}</b></span>}>{period.label} vs every team</SectionTitle>
       <Card className="divide-y divide-line">
         {v.rows.map((r) => {
           const tone = r.record[0] > r.record[1] ? "text-up" : r.record[0] < r.record[1] ? "text-down" : "text-warn";
@@ -299,21 +361,22 @@ function VsEveryTeam({ d }: { d: CategoryLeague }) {
         })}
       </Card>
       <p className="px-1 pt-2 text-xs text-muted">
-        Your categories so far this week (live) against each team's, as if you'd played everyone. Tap a team to compare.
+        {period.live ? "Your categories so far this week (live)" : `Your final ${period.label.toLowerCase()} categories`} against each
+        team's, as if you'd played everyone. Tap a team to compare.
       </p>
     </>
   );
 }
 
-function HeadToHead({ d, me, them, team, record, opponent }: {
-  d: CategoryLeague; me: Record<string, number>; them: Record<string, number>; team: string; record: number[]; opponent: boolean;
+function HeadToHead({ d, me, them, team, record, opponent, period }: {
+  d: CategoryLeague; me: Record<string, number>; them: Record<string, number>; team: string; record: number[]; opponent: boolean; period: Period;
 }) {
   const tone = record[0] > record[1] ? "text-up" : record[0] < record[1] ? "text-down" : "text-warn";
   return (
     <>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-xs text-muted">This week so far (live){opponent ? " · your opponent" : ""}</div>
+          <div className="text-xs text-muted">{period.live ? "This week so far (live)" : `${period.label} final`}{opponent ? " · your opponent" : ""}</div>
           <h3 className="mt-0.5 truncate text-lg font-semibold">You vs {team}</h3>
         </div>
         <div className={`shrink-0 text-2xl font-bold tabular-nums ${tone}`}>{rec(record)}</div>
@@ -341,7 +404,7 @@ function HeadToHead({ d, me, them, team, record, opponent }: {
           );
         })}
       </div>
-      <p className="mt-3 text-xs text-muted">Active-lineup stats only, Mon through today. Ties shown in neither color.</p>
+      <p className="mt-3 text-xs text-muted">Active-lineup stats only, {period.live ? "Mon through today" : "the whole week"}. Ties shown in neither color.</p>
     </>
   );
 }
@@ -699,18 +762,20 @@ function ordinal(n: number) {
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
-type SeasonSort = "allplay" | "cat" | string;
+type SeasonSort = "vs_all" | "allplay" | "cat" | string;
 
 function Season({ d }: { d: CategoryLeague }) {
-  const [sort, setSort] = useState<SeasonSort>("allplay");
+  const [sort, setSort] = useState<SeasonSort>("vs_all");
   const se = d.season;
   if (!se?.rows.length) return <Card className="p-4 text-sm text-muted">Season records will appear after the next update.</Card>;
   const me = d.my_team_id;
   const frac = (r: number[]) => (r[0] + r[2] / 2) / Math.max(r[0] + r[1] + r[2], 1);
   const val = (r: SeasonRow) =>
-    sort === "allplay" ? frac(r.allplay) : sort === "cat" ? frac(r.cat_record) : d.lower_is_better.includes(sort) ? -r.totals[sort] : r.totals[sort];
+    sort === "vs_all" ? frac(r.vs_all ?? [0, 0, 0]) : sort === "allplay" ? frac(r.allplay) : sort === "cat" ? frac(r.cat_record) : d.lower_is_better.includes(sort) ? -r.totals[sort] : r.totals[sort];
   const rows = [...se.rows].sort((a, b) => val(b) - val(a));
   const weeks = se.weeks.length;
+  const finished = se.weeks.filter((w) => w.finished).length;
+  const mineRow = se.rows.find((r) => r.team_id === me);
   const head = (k: SeasonSort, label: string, cls = "") => (
     <th onClick={() => setSort(k)} className={`cursor-pointer whitespace-nowrap px-2 py-2 text-right font-semibold ${sort === k ? "text-accent" : "text-muted"} ${cls}`}>
       {label}
@@ -721,13 +786,28 @@ function Season({ d }: { d: CategoryLeague }) {
       <div className="px-1 pb-2 pt-1 text-xs text-muted">
         {weeks} week{weeks === 1 ? "" : "s"}, live through today. Tap a column to sort.
       </div>
+      {mineRow?.vs_all && finished > 0 && (
+        <Card className="mb-3 flex items-center justify-between gap-3 px-4 py-3">
+          <div>
+            <div className="text-xs text-muted">Your record vs all · {finished} finished week{finished === 1 ? "" : "s"}</div>
+            <div className="text-xl font-bold tabular-nums">{rec(mineRow.vs_all)}</div>
+          </div>
+          <div className="text-right">
+            <div className="text-xl font-bold tabular-nums text-accent">{pct(frac(mineRow.vs_all))}</div>
+            <div className="text-xs text-muted">
+              {ordinal([...se.rows].sort((a, b) => frac(b.vs_all ?? [0, 0, 0]) - frac(a.vs_all ?? [0, 0, 0])).findIndex((r) => r.team_id === me) + 1)} of {se.rows.length}
+            </div>
+          </div>
+        </Card>
+      )}
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-xs tabular-nums">
             <thead className="border-b border-line">
               <tr>
                 <th className="sticky left-0 z-[1] bg-surface px-3 py-2 text-left font-semibold text-muted">Team</th>
-                {head("allplay", "All-play")}
+                {head("vs_all", "vs All")}
+                {head("allplay", "Cat all-play")}
                 {head("cat", "Cat rec")}
                 {d.cats.map((c) => head(c, c))}
               </tr>
@@ -740,6 +820,10 @@ function Season({ d }: { d: CategoryLeague }) {
                     <td className={`sticky left-0 z-[1] max-w-[9rem] truncate px-3 py-2 font-medium ${mine ? "bg-[color-mix(in_oklab,var(--surface),var(--accent)_5%)] text-accent" : "bg-surface"}`}>
                       {r.team}
                       <div className="text-[10px] font-normal text-muted">{rec(r.matchups)} in matchups</div>
+                    </td>
+                    <td className="whitespace-nowrap px-2 py-2 text-right">
+                      {r.vs_all ? rec(r.vs_all) : "–"}
+                      {r.vs_all && <div className="text-[10px] text-muted">{pct(frac(r.vs_all))}</div>}
                     </td>
                     <td className="whitespace-nowrap px-2 py-2 text-right">
                       {rec(r.allplay)}
@@ -759,7 +843,8 @@ function Season({ d }: { d: CategoryLeague }) {
         </div>
       </Card>
       <p className="px-1 pt-2 text-xs text-muted">
-        All-play = categories won against every team, every week. Cat rec = categories won against your actual opponents.
+        vs All = your matchup record if you'd played every team every finished week (won by taking more categories).
+        Cat all-play = categories won against every team, every week, live. Cat rec = categories won against your actual opponents.
         Totals count active-lineup stats only, like Yahoo.
       </p>
     </>
