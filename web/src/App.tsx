@@ -4,7 +4,7 @@ import type { Bundle } from "./types";
 import { Basketball, type BballTab } from "./components/Basketball";
 import { Hockey } from "./components/Hockey";
 import { useRefresh, type RefreshState } from "./refresh";
-import { Sheet } from "./components/ui";
+import { ErrorBoundary, Sheet } from "./components/ui";
 
 type League = "basketball" | "hockey" | "soccer" | "football";
 const LEAGUES: { id: League; label: string; icon: string }[] = [
@@ -128,9 +128,13 @@ export default function App() {
       <main className="px-4 pt-3">
         <StaleBanner d={league === "basketball" ? bb : league === "hockey" ? hk : undefined} />
         {league === "basketball" && bb ? (
-          <Basketball d={bb} tab={tab} />
+          <ErrorBoundary key={`bb-${tab}`}>
+            <Basketball d={bb} tab={tab} />
+          </ErrorBoundary>
         ) : league === "hockey" && hk ? (
-          <Hockey d={hk} tab={tab} />
+          <ErrorBoundary key={`hk-${tab}`}>
+            <Hockey d={hk} tab={tab} />
+          </ErrorBoundary>
         ) : (
           <div className="mt-16 text-center text-muted">
             <div className="text-4xl">{LEAGUES.find((l) => l.id === league)?.icon}</div>

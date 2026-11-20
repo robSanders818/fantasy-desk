@@ -153,10 +153,10 @@ class League:
         their chance to start). Players whose game has started are left where they are."""
         pl = self.pl
         days, pm = self.plays(self.today, self.today)
-        if not days:
-            return {"starters": [], "bench": [], "no_game": []}
-        plays = lambda p: bool(pm.get(pl.at[p, "team"], np.zeros(1, bool))[0])
         ros = [p for p in self.roster(me) if pl.at[p, "status"] not in OUT_STATUS]
+        if not days:   # no NHL games today
+            return {"starters": [], "bench": [], "no_game": [int(p) for p in ros], "started": [], "open_slots": []}
+        plays = lambda p: bool(pm.get(pl.at[p, "team"], np.zeros(1, bool))[0])
         live = [p for p in ros if plays(p) and p not in self.skip_today]
         # value today = points if he plays x chance he plays (start chance for goalies)
         val = {p: pl.at[p, "fp_play"] * pl.at[p, "p_play"] for p in live}

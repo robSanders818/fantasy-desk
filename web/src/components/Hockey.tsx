@@ -98,7 +98,8 @@ function Row({ k, children }: { k: string; children: React.ReactNode }) {
 }
 
 function TodayLineup({ d }: { d: HockeyLeague }) {
-  const l = d.lineup_today;
+  // Older/partial data can miss lists (e.g. no NHL games today): treat missing as empty.
+  const l = { starters: [], bench: [], no_game: [], started: [], open_slots: [], ...(d.lineup_today as Partial<HockeyLeague["lineup_today"]>) };
   const nothing = !l.starters.length && !l.bench.length;
   return (
     <>

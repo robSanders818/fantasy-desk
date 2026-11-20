@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Component, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 export const pct = (p: number, digits = 0) => `${(p * 100).toFixed(digits)}%`;
 
@@ -183,4 +183,24 @@ export function Sheet({ onClose, children }: { onClose: () => void; children: Re
       </div>
     </div>
   );
+}
+
+/** Keeps one broken section from blanking the whole app: shows a note instead and logs the error. */
+export class ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch(err: unknown) {
+    console.error(err);
+  }
+  render() {
+    return this.state.failed ? (
+      <div className="mt-16 px-6 text-center text-sm text-muted">
+        This section couldn't be shown with today's data. Other tabs still work.
+      </div>
+    ) : (
+      this.props.children
+    );
+  }
 }
